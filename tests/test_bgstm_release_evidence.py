@@ -21,71 +21,83 @@ def pr_impact(decision="GO", *, flow_decision="GO", missing=None):
         "SF-OPP-001": {"requirement_id": "SF-OPP-001", "release_decision": "GO", "mismatch_count": 0}}}
 
 
-def code_evidence(status="passed", sha=SHA):
-    return {"schema": bgstm.SUPPORTING_SCHEMA, "source": "salesforce-code-analyzer", "status": status,
+def supporting(source, status="passed", sha=SHA):
+    return {"schema": bgstm.SUPPORTING_SCHEMA, "source": source, "status": status,
             "git_sha": sha, "run_id": "1", "run_url": "https://github.com/example/repo/actions/runs/1",
-            "summary": {"exit_code": 0 if status == "passed" else 1}}
+            "summary": {"fixture": True}}
+
+
+def accepted(source, status="passed", sha=SHA):
+    return {**supporting(source, status, sha), "validation": "accepted"}
 
 
 class BgstmReleaseEvidenceTests(unittest.TestCase):
-    def build(self, impact, code=None, apex="passed"):
-        return bgstm.build_bundle(impact, project_id=PROJECT_ID, git_sha=SHA, git_branch="feature/test",
-                                  ci_url="https://github.com/example/repo/actions/runs/1",
-                                  code_analyzer_evidence=code or {**code_evidence(), "validation": "accepted"},
-                                  apex_runtime=apex)
+    def build(self, impact, code=None, apex=None):
+        return bgstm.build_bundle(
+            impact,
+            project_id=PROJECT_ID,
+            git_sha=SHA,
+            git_branch="feature/test",
+            ci_url="https://github.com/example/repo/actions/runs/1",
+            code_analyzer_evidence=code or accepted("salesforce-code-analyzer"),
+            apex_runtime_evidence=apex or accepted("salesforce-apex-runtime"),
+        )
 
     def test_all_required_evidence_passes_go(self):
-        bundle = self.build(pr_impact())
-        self.assertEqual("GO", bundle["release_decision"])
-        self.assertEqual(4, len(bundle["bgstm_external_results_v1"]["case_templates"]))
+        self.assertEqual("GO", self.build(pr_impact())["release_decision"])
 
     def test_semantic_no_go_cannot_be_masked(self):
         self.assertEqual("NO-GO", self.build(pr_impact("NO-GO", flow_decision="NO-GO"))["release_decision"])
 
     def test_failed_code_analyzer_blocks_release(self):
-        bundle = self.build(pr_impact(), {**code_evidence("failed"), "validation": "accepted"})
-        self.assertEqual("NO-GO", bundle["release_decision"])
+        self.assertEqual("NO-GO", self.build(pr_impact(), code=accepted("salesforce-code-analyzer", "failed"))["release_decision"])
 
-    def test_missing_required_supporting_evidence_is_review(self):
-        self.assertEqual("REVIEW", self.build(pr_impact(), apex="not-run")["release_decision"])
+    def test_failed_apex_runtime_blocks_release(self):
+        self.assertEqual("NO-GO", self.build(pr_impact(), apex=accepted("salesforce-apex-runtime", "failed"))["release_decision"])
 
-    def test_missing_semantic_evidence_is_review(self):
-        self.assertEqual("REVIEW", self.build(pr_impact("REVIEW", missing=["SF-SEC-001"]))["release_decision"])
+    def test_missing_apex_runtime_is_review(self):
+        missing = {"source": "salesforce-apex-runtime", "status": "not-run", "validation": "missing"}
+        self.assertEqual("REVIEW", self.build(pr_impact(), apex=missing)["release_decision"])
 
-    def test_evidence_file_passed_is_accepted(self):
+    def _load(self, payload, source="salesforce-apex-runtime"):
         with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "code.json"
-            path.write_text(json.dumps(code_evidence()), encoding="utf-8")
-            result = bgstm.load_supporting_evidence(path, source="salesforce-code-analyzer", expected_sha=SHA)
-        self.assertEqual("passed", result["status"])
-        self.assertEqual("accepted", result["validation"])
+            path = Path(tmp) / "evidence.json"
+            if isinstance(payload, str):
+                path.write_text(payload, encoding="utf-8")
+            else:
+                path.write_text(json.dumps(payload), encoding="utf-8")
+            return bgstm.load_supporting_evidence(path, source=source, expected_sha=SHA)
 
-    def test_missing_evidence_is_not_run(self):
-        result = bgstm.load_supporting_evidence(None, source="salesforce-code-analyzer", expected_sha=SHA)
-        self.assertEqual("not-run", result["status"])
-        self.assertEqual("missing", result["validation"])
+    def test_apex_passed_evidence_is_accepted(self):
+        result = self._load(supporting("salesforce-apex-runtime"))
+        self.assertEqual(("passed", "accepted"), (result["status"], result["validation"]))
 
-    def test_malformed_evidence_is_not_trusted(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "code.json"
-            path.write_text("not json", encoding="utf-8")
-            result = bgstm.load_supporting_evidence(path, source="salesforce-code-analyzer", expected_sha=SHA)
-        self.assertEqual("not-run", result["status"])
-        self.assertEqual("malformed", result["validation"])
+    def test_apex_failed_evidence_is_accepted(self):
+        result = self._load(supporting("salesforce-apex-runtime", "failed"))
+        self.assertEqual(("failed", "accepted"), (result["status"], result["validation"]))
 
-    def test_sha_mismatch_is_not_trusted(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "code.json"
-            path.write_text(json.dumps(code_evidence(sha="other")), encoding="utf-8")
-            result = bgstm.load_supporting_evidence(path, source="salesforce-code-analyzer", expected_sha=SHA)
-        self.assertEqual("not-run", result["status"])
-        self.assertEqual("sha-mismatch", result["validation"])
+    def test_missing_apex_evidence_is_not_run(self):
+        result = bgstm.load_supporting_evidence(None, source="salesforce-apex-runtime", expected_sha=SHA)
+        self.assertEqual(("not-run", "missing"), (result["status"], result["validation"]))
 
-    def test_code_analyzer_case_preserves_ingested_provenance(self):
+    def test_malformed_apex_evidence_is_not_trusted(self):
+        result = self._load("not json")
+        self.assertEqual(("not-run", "malformed"), (result["status"], result["validation"]))
+
+    def test_wrong_source_apex_evidence_is_not_trusted(self):
+        result = self._load(supporting("salesforce-code-analyzer"))
+        self.assertEqual(("not-run", "malformed"), (result["status"], result["validation"]))
+
+    def test_apex_sha_mismatch_is_not_trusted(self):
+        result = self._load(supporting("salesforce-apex-runtime", sha="other"))
+        self.assertEqual(("not-run", "sha-mismatch"), (result["status"], result["validation"]))
+
+    def test_both_supporting_cases_preserve_provenance(self):
         bundle = self.build(pr_impact())
-        case = next(c for c in bundle["bgstm_external_results_v1"]["case_templates"] if c["source"]["kind"] == "code-analyzer")
-        self.assertEqual("accepted", case["source"]["validation"])
-        self.assertEqual(SHA, case["source"]["git_sha"])
+        supporting_cases = [c for c in bundle["bgstm_external_results_v1"]["case_templates"] if c["source"]["kind"] in {"code-analyzer", "apex-runtime"}]
+        self.assertEqual(2, len(supporting_cases))
+        self.assertTrue(all(c["source"]["validation"] == "accepted" for c in supporting_cases))
+        self.assertTrue(all(c["source"]["git_sha"] == SHA for c in supporting_cases))
 
 
 if __name__ == "__main__":
