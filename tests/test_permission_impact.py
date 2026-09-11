@@ -13,7 +13,7 @@ SPEC.loader.exec_module(permission_impact)
 class PermissionImpactTests(unittest.TestCase):
     def setUp(self):
         self.contract = ROOT / "policies" / "SF-SEC-001.json"
-        self.baseline = ROOT / "force-app" / "main" / "default" / "permissionsets" / "Sales_Rep_Opportunity_Access.permissionset-meta.xml"
+        self.baseline = ROOT / "tests" / "fixtures" / "baseline" / "Sales_Rep_Opportunity_Access.permissionset-meta.xml"
         self.mutant = ROOT / "mutations" / "Sales_Rep_Opportunity_Access.finance-edit.permissionset-meta.xml"
 
     def test_baseline_is_go(self):
