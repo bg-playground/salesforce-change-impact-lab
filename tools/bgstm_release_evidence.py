@@ -100,13 +100,14 @@ def release_decision(pr_impact: dict[str, Any], code: str, apex: str) -> tuple[s
 
 
 def build_bundle(pr_impact: dict[str, Any], *, project_id: str, git_sha: str | None, git_branch: str | None,
-                 ci_url: str | None, code_analyzer_evidence: dict[str, Any], apex_runtime: str) -> dict[str, Any]:
-    apex_evidence = {"source": "apex-runtime", "status": apex_runtime, "validation": "normalized-input"}
+                 ci_url: str | None, code_analyzer_evidence: dict[str, Any],
+                 apex_runtime_evidence: dict[str, Any]) -> dict[str, Any]:
     code_status = code_analyzer_evidence["status"]
-    decision, reason = release_decision(pr_impact, code_status, apex_runtime)
+    apex_status = apex_runtime_evidence["status"]
+    decision, reason = release_decision(pr_impact, code_status, apex_status)
     cases = semantic_cases(pr_impact) + [
         supporting_case("code-analyzer", code_analyzer_evidence),
-        supporting_case("apex-runtime", apex_evidence),
+        supporting_case("apex-runtime", apex_runtime_evidence),
     ]
     session_status = "passed" if decision == "GO" else "failed" if decision == "NO-GO" else "aborted"
     counts = {key: sum(c["outcome"] == key for c in cases) for key in ("passed", "failed", "skipped", "flaky")}
@@ -128,7 +129,8 @@ def build_bundle(pr_impact: dict[str, Any], *, project_id: str, git_sha: str | N
         },
         "source_summary": {"pr_impact_decision": pr_impact.get("decision"),
                            "impacted_requirements": sorted(pr_impact.get("semantic_evidence", {}).keys()),
-                           "code_analyzer": code_analyzer_evidence, "apex_runtime": apex_runtime},
+                           "code_analyzer": code_analyzer_evidence,
+                           "apex_runtime": apex_runtime_evidence},
     }
 
 
@@ -149,14 +151,15 @@ def main() -> int:
     parser.add_argument("--git-branch")
     parser.add_argument("--ci-url")
     parser.add_argument("--code-analyzer-evidence", type=Path)
-    parser.add_argument("--apex-runtime", choices=sorted(VALID_SUPPORTING), required=True)
+    parser.add_argument("--apex-runtime-evidence", type=Path)
     parser.add_argument("--json-out", type=Path, required=True)
     parser.add_argument("--text-out", type=Path)
     args = parser.parse_args()
     code = load_supporting_evidence(args.code_analyzer_evidence, source="salesforce-code-analyzer", expected_sha=args.git_sha)
+    apex = load_supporting_evidence(args.apex_runtime_evidence, source="salesforce-apex-runtime", expected_sha=args.git_sha)
     bundle = build_bundle(load_json(args.pr_impact), project_id=args.project_id, git_sha=args.git_sha,
-                          git_branch=args.git_branch, ci_url=args.ci_url, code_analyzer_evidence=code,
-                          apex_runtime=args.apex_runtime)
+                          git_branch=args.git_branch, ci_url=args.ci_url,
+                          code_analyzer_evidence=code, apex_runtime_evidence=apex)
     args.json_out.parent.mkdir(parents=True, exist_ok=True)
     args.json_out.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if args.text_out:
