@@ -17,12 +17,22 @@ def load_changed_file(path: Path) -> list[str]:
     return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def run_semantic(metadata: Path, contract: Path) -> dict:
-    tool = Path(__file__).with_name("impact_lab.py")
-    spec = importlib.util.spec_from_file_location("impact_lab_for_pr", tool)
+def _load_tool(filename: str, module_name: str):
+    tool = Path(__file__).with_name(filename)
+    spec = importlib.util.spec_from_file_location(module_name, tool)
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
+    return module
+
+
+def run_semantic(metadata: Path, contract: Path, kind: str = "validation-rule") -> dict:
+    if kind == "validation-rule":
+        module = _load_tool("impact_lab.py", "impact_lab_for_pr")
+    elif kind == "flow":
+        module = _load_tool("flow_impact.py", "flow_impact_for_pr")
+    else:
+        raise ValueError(f"Unsupported semantic kind: {kind}")
     return module.analyze(metadata, contract)
 
 
@@ -82,13 +92,19 @@ def render_text(report: dict) -> str:
                 lines.append(f"      - {item['label']} — {item['reason']}")
     semantic = report.get("semantic_evidence")
     if semantic:
-        lines += [
-            "",
-            "Semantic evidence:",
-            f"  contract threshold: >{semantic['expected_threshold']:.0f}%",
-            f"  metadata threshold: >{semantic['observed_threshold']:.0f}%",
-            f"  mismatches: {semantic['mismatch_count']}",
-        ]
+        lines += ["", "Semantic evidence:"]
+        if "expected_threshold" in semantic:
+            lines += [
+                f"  contract threshold: >{semantic['expected_threshold']:.0f}%",
+                f"  metadata threshold: >{semantic['observed_threshold']:.0f}%",
+            ]
+        elif "expected_logic" in semantic:
+            lines += [
+                f"  contract logic: {semantic['expected_logic'].upper()}",
+                f"  metadata logic: {semantic['observed_logic'].upper()}",
+                f"  conditions aligned: {semantic['conditions_aligned']}",
+            ]
+        lines.append(f"  mismatches: {semantic['mismatch_count']}")
     lines += ["", f"Decision: {report['decision']}", f"Reason: {report['reason']}"]
     return "\n".join(lines)
 
@@ -100,13 +116,14 @@ def main() -> int:
     changed_group.add_argument("--changed", nargs="+")
     changed_group.add_argument("--changed-file", type=Path)
     parser.add_argument("--semantic-metadata", type=Path)
+    parser.add_argument("--semantic-kind", choices=("validation-rule", "flow"), default="validation-rule")
     parser.add_argument("--contract", type=Path, default=Path("policies/SF-OPP-001.json"))
     parser.add_argument("--json-out", type=Path)
     parser.add_argument("--text-out", type=Path)
     args = parser.parse_args()
 
     changed = args.changed if args.changed is not None else load_changed_file(args.changed_file)
-    semantic = run_semantic(args.semantic_metadata, args.contract) if args.semantic_metadata else None
+    semantic = run_semantic(args.semantic_metadata, args.contract, args.semantic_kind) if args.semantic_metadata else None
     report = analyze(changed, load_json(args.manifest), semantic)
     rendered = render_text(report)
     print(rendered)
