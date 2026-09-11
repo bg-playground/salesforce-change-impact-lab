@@ -26,10 +26,7 @@ jobs:
           python tools/flow_impact.py --flow mutations/Case_Strategic_Escalation.logic-or.flow-meta.xml --contract "$CONTRACT" --json-out evidence/flow-mutation.json
           status=$?
           set -e
-          if [ "$status" -ne 2 ]; then
-            echo "Expected Flow semantic mutation to produce NO-GO / exit 2; got $status"
-            exit 1
-          fi
+          if [ "$status" -ne 2 ]; then echo "Expected Flow semantic mutation NO-GO; got $status"; exit 1; fi
       - name: Prove isolated Permission Set baseline and mutation behavior
         shell: bash
         run: |
@@ -40,10 +37,7 @@ jobs:
           python tools/permission_impact.py --permission-set mutations/Sales_Rep_Opportunity_Access.finance-edit.permissionset-meta.xml --contract "$CONTRACT" --json-out evidence/permission-mutation.json
           status=$?
           set -e
-          if [ "$status" -ne 2 ]; then
-            echo "Expected Permission Set mutation to produce NO-GO / exit 2; got $status"
-            exit 1
-          fi
+          if [ "$status" -ne 2 ]; then echo "Expected Permission Set mutation NO-GO; got $status"; exit 1; fi
       - name: Prove PR-impact engine with isolated semantic fixtures
         shell: bash
         run: |
@@ -54,10 +48,23 @@ jobs:
           python tools/pr_impact.py --changed "$RULE" --semantic-metadata mutations/High_Discount_Requires_Finance.threshold-30.validationRule-meta.xml --json-out evidence/pr-impact-mutation.json
           status=$?
           set -e
-          if [ "$status" -ne 2 ]; then
-            echo "Expected semantic mutation to produce NO-GO / exit 2; got $status"
-            exit 1
-          fi
+          if [ "$status" -ne 2 ]; then echo "Expected semantic mutation NO-GO; got $status"; exit 1; fi
+      - name: Create deterministic Code Analyzer ingestion fixture
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload = {
+              "schema": "salesforce-change-impact-lab.supporting-evidence.v1",
+              "source": "salesforce-code-analyzer",
+              "status": "passed",
+              "git_sha": os.environ["GITHUB_SHA"],
+              "run_id": "demo-fixture",
+              "run_url": "demo-ci",
+              "summary": {"fixture": True},
+          }
+          Path("evidence/code-analyzer-demo-evidence.json").write_text(json.dumps(payload, indent=2) + "\n")
+          PY
       - name: Prove BGSTM release evidence bundle
         run: >-
           python tools/bgstm_release_evidence.py
@@ -66,7 +73,7 @@ jobs:
           --git-sha "$GITHUB_SHA"
           --git-branch "$GITHUB_REF_NAME"
           --ci-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          --code-analyzer passed
+          --code-analyzer-evidence evidence/code-analyzer-demo-evidence.json
           --apex-runtime passed
           --json-out evidence/bgstm-release-evidence.json
           --text-out evidence/bgstm-release-evidence.txt
