@@ -1,18 +1,24 @@
 # PR-aware change impact
 
-The initial lab proves that Salesforce metadata can remain valid while drifting from frozen business intent. The PR-aware layer adds the next question:
+The lab proves that Salesforce metadata can remain technically valid while drifting from frozen business intent. The PR-aware layer asks a second question:
 
 > **Given this change, what deserves testing, and why?**
 
 ## Business-intent relevance
 
-`impact/manifest.json` maps Salesforce components to a business control (`SF-OPP-001`), its risk, and the evidence that should be selected when that control is touched.
+`impact/manifest.json` maps Salesforce components to governed business controls, risk, and the evidence selected when each control is touched.
 
-This is deliberately complementary to platform/dependency-oriented test selection. A dependency graph can tell you that code or metadata is connected. The manifest adds a different dimension: which **business control** is at risk, what evidence demonstrates that control, and which tests are unnecessary for this change.
+This is deliberately complementary to platform/dependency-oriented test selection. A dependency graph can tell you that code or metadata is connected. The manifest adds a different dimension: which **business controls** are at risk, what evidence demonstrates them, and which tests are unnecessary for the change.
+
+The current governed controls are:
+
+- `SF-OPP-001` — Opportunity Validation Rule semantics
+- `SF-CASE-001` — Case Flow decision semantics
+- `SF-SEC-001` — Opportunity Permission Set access semantics
 
 ## Manual CLI path
 
-The selector can still be run directly when experimenting locally:
+The original single-control CLI remains supported:
 
 ```bash
 python tools/pr_impact.py \
@@ -21,60 +27,113 @@ python tools/pr_impact.py \
   --json-out evidence/pr-impact-mutation.json
 ```
 
-The command intentionally exits `2` because the changed component maps to a high-risk business control and the supplied metadata weakens its threshold from `>20%` to `>30%`.
+For multi-control evaluation, repeat `--semantic-control` with the requirement ID, semantic kind, metadata path, and frozen contract:
+
+```bash
+python tools/pr_impact.py \
+  --changed \
+    force-app/main/default/objects/Opportunity/validationRules/High_Discount_Requires_Finance.validationRule-meta.xml \
+    force-app/main/default/flows/Case_Strategic_Escalation.flow-meta.xml \
+  --semantic-control \
+    SF-OPP-001 validation-rule \
+    force-app/main/default/objects/Opportunity/validationRules/High_Discount_Requires_Finance.validationRule-meta.xml \
+    policies/SF-OPP-001.json \
+  --semantic-control \
+    SF-CASE-001 flow \
+    force-app/main/default/flows/Case_Strategic_Escalation.flow-meta.xml \
+    policies/SF-CASE-001.json
+```
+
+Semantic evidence is stored by requirement ID rather than as one global result:
+
+```json
+{
+  "semantic_evidence": {
+    "SF-OPP-001": {
+      "release_decision": "GO"
+    },
+    "SF-CASE-001": {
+      "release_decision": "GO"
+    }
+  }
+}
+```
 
 ## GitHub pull-request path
 
-`.github/workflows/pr-impact.yml` removes the manual changed-file step for reviewers.
+`.github/workflows/pr-impact.yml` derives the changed files from the PR and can now invoke **all** relevant semantic oracles in the same run.
 
 For every pull request it:
 
 1. checks out the PR with enough history to compare base and head commits;
 2. derives `changed-files.txt` directly from the pull request diff;
-3. runs `tools/pr_impact.py --changed-file changed-files.txt`;
-4. automatically invokes semantic validation when the governed Opportunity validation rule changed;
-5. writes the readable impact report to the GitHub Actions job summary;
-6. uploads the changed-file list plus JSON and text evidence as workflow artifacts; and
-7. fails the job when the business-intent decision is `NO-GO`.
+3. identifies every governed semantic metadata component that changed;
+4. supplies one `--semantic-control` entry for each applicable Validation Rule, Flow, and Permission Set control;
+5. runs one aggregate PR-impact decision;
+6. writes the readable per-control evidence and aggregate decision to the GitHub Actions job summary;
+7. uploads the changed-file list plus JSON and text evidence as workflow artifacts; and
+8. fails the job when **any** impacted semantic control returns `NO-GO`.
 
 No Salesforce org credentials are required for this proof. The release decision continues to come from frozen intent and repository metadata rather than from the implementation claiming that it is correct.
 
-Representative output:
+## Aggregate decision rules
+
+The aggregation is deliberately conservative and deterministic:
+
+- `NO-IMPACT` — no changed file maps to a frozen business control.
+- `NO-GO` — at least one impacted control has semantic evidence with `NO-GO`. A known business-intent failure takes precedence even if another impacted control still lacks evidence.
+- `REVIEW` — one or more controls are impacted but required semantic evidence is still missing, and no supplied semantic result is `NO-GO`.
+- `GO` — every impacted control has semantic evidence and every supplied semantic result is `GO`.
+
+This prevents a passing control from masking a failing one and prevents a partially evaluated multi-control PR from receiving GO.
+
+Representative multi-control output:
 
 ```text
 PR IMPACT
 
 Affected business controls:
   SF-OPP-001  HIGH RISK
-
-    selected evidence:
-      ✓ semantic contract check
-      ✓ threshold boundary cases
-      ✓ Apex OpportunityReleaseGuardTest
-      → Playwright OPP-07
-
-    not selected:
-      - Permission-set regression — No permission metadata participates in SF-OPP-001.
+  SF-CASE-001 HIGH RISK
 
 Semantic evidence:
-  contract threshold: >20%
-  metadata threshold: >30%
-  mismatches: 2
+  SF-CASE-001:
+    contract logic: AND
+    metadata logic: OR
+    conditions aligned: True
+    mismatches: 2
+    decision: NO-GO
+  SF-OPP-001:
+    contract threshold: >20%
+    metadata threshold: >20%
+    mismatches: 0
+    decision: GO
 
 Decision: NO-GO
+Reason: Business-intent drift detected in: SF-CASE-001.
 ```
 
-## Decision states
+## Why aggregation matters
 
-- `NO-IMPACT`: no changed file maps to a frozen control in the current manifest.
-- `REVIEW`: a business control is affected but semantic evidence was not supplied yet.
-- `GO`: an affected control was evaluated and its implementation matches frozen intent.
-- `NO-GO`: an affected control was evaluated and semantic evidence found drift.
+Real Salesforce pull requests do not necessarily respect test-tool boundaries. A single change set can alter an Opportunity Validation Rule, a Flow, and a Permission Set together. First-match routing would under-report that risk by evaluating only one semantic control.
+
+The aggregate model keeps each requirement independently traceable while producing one release-level decision:
+
+```text
+changed files
+    │
+    ├── SF-OPP-001 ── semantic evidence ── GO
+    ├── SF-CASE-001 ─ semantic evidence ── NO-GO
+    └── SF-SEC-001 ── semantic evidence ── GO
+                           │
+                           ▼
+                    aggregate NO-GO
+```
 
 ## Deliberate limitations
 
-The manifest is intentionally explicit rather than magical. This increment does not claim to infer every Salesforce dependency, parse every metadata type, or auto-discover every business requirement. Its value is explainability: a reviewer can inspect exactly why evidence was selected and exactly why other evidence was skipped.
+The manifest remains intentionally explicit rather than magical. This increment does not claim to infer every Salesforce dependency, parse every metadata type, or auto-discover every business requirement. Its value is explainability: reviewers can inspect why each control was selected and how its evidence contributed to the final release decision.
 
-The GitHub-native workflow also intentionally publishes to the job summary rather than creating a new PR comment on every synchronization event. That avoids notification noise while still making the decision visible in the required check. A later increment can add a single updatable PR comment if it proves useful.
+The workflow continues to publish to the job summary rather than creating a new PR comment on every synchronization event. That avoids notification noise while making the decision visible in the required check.
 
-Future increments can replace portions of the explicit manifest with metadata graphs, Flow analysis, Apex dependencies, permission relationships, and BGSTM external-results aggregation without changing the decision model.
+Future increments can add BGSTM External Results aggregation, metadata/dependency graphs, org-backed runtime evidence, and targeted browser evidence without changing the per-requirement aggregation model.

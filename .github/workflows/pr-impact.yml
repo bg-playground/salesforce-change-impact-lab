@@ -38,22 +38,20 @@ jobs:
           semantic_args=()
 
           if grep -Fxq "$RULE" changed-files.txt; then
-            semantic_args=(
-              --semantic-metadata "$RULE"
-              --semantic-kind validation-rule
-              --contract policies/SF-OPP-001.json
+            semantic_args+=(
+              --semantic-control SF-OPP-001 validation-rule "$RULE" policies/SF-OPP-001.json
             )
-          elif grep -Fxq "$FLOW" changed-files.txt; then
-            semantic_args=(
-              --semantic-metadata "$FLOW"
-              --semantic-kind flow
-              --contract policies/SF-CASE-001.json
+          fi
+
+          if grep -Fxq "$FLOW" changed-files.txt; then
+            semantic_args+=(
+              --semantic-control SF-CASE-001 flow "$FLOW" policies/SF-CASE-001.json
             )
-          elif grep -Fxq "$PERMISSION_SET" changed-files.txt; then
-            semantic_args=(
-              --semantic-metadata "$PERMISSION_SET"
-              --semantic-kind permission-set
-              --contract policies/SF-SEC-001.json
+          fi
+
+          if grep -Fxq "$PERMISSION_SET" changed-files.txt; then
+            semantic_args+=(
+              --semantic-control SF-SEC-001 permission-set "$PERMISSION_SET" policies/SF-SEC-001.json
             )
           fi
 
