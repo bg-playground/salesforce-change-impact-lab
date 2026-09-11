@@ -17,15 +17,15 @@ class PrImpactTests(unittest.TestCase):
         self.manifest = json.loads((ROOT / "impact" / "manifest.json").read_text(encoding="utf-8"))
         self.rule = "force-app/main/default/objects/Opportunity/validationRules/High_Discount_Requires_Finance.validationRule-meta.xml"
         self.contract = ROOT / "policies" / "SF-OPP-001.json"
-        self.baseline = ROOT / self.rule
+        self.baseline = ROOT / "tests" / "fixtures" / "baseline" / "High_Discount_Requires_Finance.validationRule-meta.xml"
         self.mutant = ROOT / "mutations" / "High_Discount_Requires_Finance.threshold-30.validationRule-meta.xml"
         self.flow = "force-app/main/default/flows/Case_Strategic_Escalation.flow-meta.xml"
         self.flow_contract = ROOT / "policies" / "SF-CASE-001.json"
-        self.flow_baseline = ROOT / self.flow
+        self.flow_baseline = ROOT / "tests" / "fixtures" / "baseline" / "Case_Strategic_Escalation.flow-meta.xml"
         self.flow_mutant = ROOT / "mutations" / "Case_Strategic_Escalation.logic-or.flow-meta.xml"
         self.permission_set = "force-app/main/default/permissionsets/Sales_Rep_Opportunity_Access.permissionset-meta.xml"
         self.permission_contract = ROOT / "policies" / "SF-SEC-001.json"
-        self.permission_baseline = ROOT / self.permission_set
+        self.permission_baseline = ROOT / "tests" / "fixtures" / "baseline" / "Sales_Rep_Opportunity_Access.permissionset-meta.xml"
         self.permission_mutant = ROOT / "mutations" / "Sales_Rep_Opportunity_Access.finance-edit.permissionset-meta.xml"
 
     def evidence_map(self, *reports):
