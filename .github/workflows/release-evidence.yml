@@ -1,0 +1,167 @@
+name: Release Evidence Orchestrator
+
+on:
+  workflow_run:
+    workflows:
+      - PR Change Impact
+      - Salesforce Code Analyzer
+    types: [completed]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  aggregate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out trusted orchestration code
+        uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Query completed upstream runs for release SHA
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          mkdir -p evidence/orchestrated
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/pr-impact.yml/runs" \
+            -f event=pull_request -f status=completed -f head_sha="$TARGET_SHA" -f per_page=20 \
+            > evidence/orchestrated/pr-impact-runs.json
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/code-analyzer.yml/runs" \
+            -f event=pull_request -f status=completed -f head_sha="$TARGET_SHA" -f per_page=20 \
+            > evidence/orchestrated/code-analyzer-runs.json
+
+      - name: Select same-SHA evidence runs
+        id: plan
+        env:
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          python tools/workflow_evidence_plan.py
+          --expected-sha "$TARGET_SHA"
+          --pr-impact-runs evidence/orchestrated/pr-impact-runs.json
+          --code-analyzer-runs evidence/orchestrated/code-analyzer-runs.json
+          --json-out evidence/orchestrated/orchestration-plan.json
+          --github-output "$GITHUB_OUTPUT"
+
+      - name: Download PR Change Impact evidence
+        if: steps.plan.outputs.pr_impact_run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          name: pr-change-impact-evidence
+          path: ${{ runner.temp }}/pr-impact
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.plan.outputs.pr_impact_run_id }}
+
+      - name: Download Salesforce Code Analyzer evidence
+        if: steps.plan.outputs.code_analyzer_run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          name: salesforce-code-analyzer-release-evidence
+          path: ${{ runner.temp }}/code-analyzer
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.plan.outputs.code_analyzer_run_id }}
+
+      - name: Prepare collected evidence as data
+        id: inputs
+        env:
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          PR_JSON="$(find "${RUNNER_TEMP}/pr-impact" -type f -name 'pr-native-impact.json' -print -quit 2>/dev/null || true)"
+          CODE_JSON="$(find "${RUNNER_TEMP}/code-analyzer" -type f -name 'code-analyzer-evidence.json' -print -quit 2>/dev/null || true)"
+
+          if [ -n "$PR_JSON" ]; then
+            cp "$PR_JSON" evidence/orchestrated/pr-native-impact.json
+          else
+            python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = {
+              "schema": "salesforce-change-impact-lab.pr-impact.missing.v1",
+              "decision": "REVIEW",
+              "semantic_evidence": {},
+              "missing_semantic_evidence": ["PR Change Impact artifact"],
+              "reason": "Orchestrator could not collect PR Change Impact evidence for the release SHA.",
+          }
+          Path("evidence/orchestrated/pr-native-impact.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
+          fi
+
+          if [ -n "$CODE_JSON" ]; then
+            cp "$CODE_JSON" evidence/orchestrated/code-analyzer-evidence.json
+            echo "code_analyzer_arg=--code-analyzer-evidence evidence/orchestrated/code-analyzer-evidence.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "code_analyzer_arg=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build orchestrated BGSTM release evidence
+        id: bundle
+        env:
+          TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
+          TARGET_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          CODE_ANALYZER_ARG: ${{ steps.inputs.outputs.code_analyzer_arg }}
+        shell: bash
+        run: |
+          args=(
+            --pr-impact evidence/orchestrated/pr-native-impact.json
+            --project-id 00000000-0000-0000-0000-000000000039
+            --git-sha "$TARGET_SHA"
+            --git-branch "$TARGET_BRANCH"
+            --ci-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            --orchestration-provenance evidence/orchestrated/orchestration-plan.json
+            --json-out evidence/orchestrated/bgstm-release-evidence.json
+            --text-out evidence/orchestrated/bgstm-release-evidence.txt
+          )
+          if [ -n "$CODE_ANALYZER_ARG" ]; then
+            args+=(--code-analyzer-evidence evidence/orchestrated/code-analyzer-evidence.json)
+          fi
+
+          # No Apex/runtime artifact is manufactured here. Until an authenticated runtime
+          # workflow exists, the aggregator correctly treats that evidence as missing/REVIEW.
+          set +e
+          python tools/bgstm_release_evidence.py "${args[@]}"
+          status=$?
+          set -e
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release evidence summary
+        if: always()
+        run: |
+          {
+            echo "## Orchestrated Salesforce release evidence"
+            echo
+            echo "Release candidate: \`${{ github.event.workflow_run.head_sha }}\`"
+            echo
+            echo '```text'
+            cat evidence/orchestrated/bgstm-release-evidence.txt 2>/dev/null || echo "Release bundle was not produced."
+            echo '```'
+            echo
+            echo "Upstream run selection and provenance are retained in \`orchestration-plan.json\`."
+            echo "Apex/runtime remains intentionally missing until a real authenticated runtime producer exists."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload orchestrated release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bgstm-release-evidence
+          path: evidence/orchestrated/
+
+      - name: Enforce orchestrated NO-GO
+        if: always() && steps.bundle.outputs.exit_code != '0'
+        env:
+          BUNDLE_EXIT_CODE: ${{ steps.bundle.outputs.exit_code }}
+        run: exit "${BUNDLE_EXIT_CODE:-1}"
