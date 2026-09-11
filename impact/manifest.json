@@ -36,6 +36,22 @@
       "not_relevant": [
         {"id": "opportunity-apex-guard", "label": "OpportunityReleaseGuardTest", "reason": "Opportunity-specific Apex does not participate in SF-CASE-001."}
       ]
+    },
+    {
+      "requirement_id": "SF-SEC-001",
+      "risk": "high",
+      "components": [
+        "force-app/main/default/permissionsets/Sales_Rep_Opportunity_Access.permissionset-meta.xml"
+      ],
+      "evidence": [
+        {"id": "permission-semantic-contract", "kind": "required", "label": "Permission Set least-privilege contract"},
+        {"id": "field-access-matrix", "kind": "required", "label": "field readable/editable access matrix"},
+        {"id": "user-access-summary", "kind": "recommended", "label": "Salesforce User Access Summary review", "reason": "Org-backed confirmation of effective access after assignments and groups are applied."},
+        {"id": "playwright-finance-approval", "kind": "recommended", "label": "Playwright finance approval authorization journey", "reason": "End-to-end confirmation that sales users cannot self-approve."}
+      ],
+      "not_relevant": [
+        {"id": "flow-runtime-test", "label": "Case Flow runtime test", "reason": "Case escalation Flow does not participate in SF-SEC-001."}
+      ]
     }
   ]
 }
