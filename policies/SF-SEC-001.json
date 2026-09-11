@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "requirement_id": "SF-SEC-001",
+  "risk": "high",
+  "title": "Sales reps cannot self-approve finance approval",
+  "permission_set": "Sales_Rep_Opportunity_Access",
+  "field_permissions": [
+    {
+      "field": "Opportunity.Discount_Percent__c",
+      "readable": true,
+      "editable": true
+    },
+    {
+      "field": "Opportunity.Finance_Approved__c",
+      "readable": true,
+      "editable": false
+    }
+  ]
+}
