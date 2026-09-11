@@ -19,6 +19,10 @@ class PrImpactTests(unittest.TestCase):
         self.contract = ROOT / "policies" / "SF-OPP-001.json"
         self.baseline = ROOT / self.rule
         self.mutant = ROOT / "mutations" / "High_Discount_Requires_Finance.threshold-30.validationRule-meta.xml"
+        self.flow = "force-app/main/default/flows/Case_Strategic_Escalation.flow-meta.xml"
+        self.flow_contract = ROOT / "policies" / "SF-CASE-001.json"
+        self.flow_baseline = ROOT / self.flow
+        self.flow_mutant = ROOT / "mutations" / "Case_Strategic_Escalation.or-logic.flow-meta.xml"
 
     def test_unrelated_change_is_no_impact(self):
         report = pr_impact.analyze(["README.md"], self.manifest)
@@ -45,6 +49,21 @@ class PrImpactTests(unittest.TestCase):
         report = pr_impact.analyze([self.rule], self.manifest, semantic)
         self.assertEqual("NO-GO", report["decision"])
         self.assertEqual(30, report["semantic_evidence"]["observed_threshold"])
+        self.assertGreater(report["semantic_evidence"]["mismatch_count"], 0)
+
+    def test_flow_baseline_semantics_make_impacted_change_go(self):
+        semantic = pr_impact.run_semantic(self.flow_baseline, self.flow_contract, "flow")
+        report = pr_impact.analyze([self.flow], self.manifest, semantic)
+        self.assertEqual("GO", report["decision"])
+        self.assertEqual("and", report["semantic_evidence"]["observed_logic"])
+        self.assertEqual(0, report["semantic_evidence"]["mismatch_count"])
+        self.assertIn("contract logic: AND", pr_impact.render_text(report))
+
+    def test_flow_mutant_semantics_make_impacted_change_no_go(self):
+        semantic = pr_impact.run_semantic(self.flow_mutant, self.flow_contract, "flow")
+        report = pr_impact.analyze([self.flow], self.manifest, semantic)
+        self.assertEqual("NO-GO", report["decision"])
+        self.assertEqual("or", report["semantic_evidence"]["observed_logic"])
         self.assertGreater(report["semantic_evidence"]["mismatch_count"], 0)
 
     def test_multi_file_change_deduplicates_control(self):
