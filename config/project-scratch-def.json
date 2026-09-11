@@ -1,0 +1,10 @@
+{
+  "orgName": "Salesforce Change Impact Lab",
+  "edition": "Developer",
+  "features": [],
+  "settings": {
+    "lightningExperienceSettings": {
+      "enableS1DesktopEnabled": true
+    }
+  }
+}
