@@ -16,6 +16,19 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Prove baseline and mutation behavior
         run: bash scripts/run-demo.sh
+      - name: Prove PR-aware impact selection
+        shell: bash
+        run: |
+          RULE="force-app/main/default/objects/Opportunity/validationRules/High_Discount_Requires_Finance.validationRule-meta.xml"
+          python tools/pr_impact.py --changed "$RULE" --semantic-metadata "$RULE" --json-out evidence/pr-impact-baseline.json
+          set +e
+          python tools/pr_impact.py --changed "$RULE" --semantic-metadata mutations/High_Discount_Requires_Finance.threshold-30.validationRule-meta.xml --json-out evidence/pr-impact-mutation.json
+          status=$?
+          set -e
+          if [ "$status" -ne 2 ]; then
+            echo "Expected semantic mutation to produce NO-GO / exit 2; got $status"
+            exit 1
+          fi
       - name: Upload evidence
         uses: actions/upload-artifact@v4
         with:
