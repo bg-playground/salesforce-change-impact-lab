@@ -44,6 +44,12 @@
         <locationX>50</locationX>
         <locationY>0</locationY>
         <connector><targetReference>Evaluate_Strategic_Escalation</targetReference></connector>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Priority</field>
+            <operator>IsNull</operator>
+            <value><booleanValue>false</booleanValue></value>
+        </filters>
         <object>Case</object>
         <recordTriggerType>CreateAndUpdate</recordTriggerType>
         <triggerType>RecordAfterSave</triggerType>
