@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "requirement_id": "SF-CASE-001",
+  "title": "Strategic Case escalation requires both high priority and strategic entitlement",
+  "risk": "high",
+  "decision_name": "Evaluate_Strategic_Escalation",
+  "rule_name": "Qualifies_For_Escalation",
+  "logic": "and",
+  "conditions": [
+    {"field": "$Record.Priority", "operator": "EqualTo", "value": "High"},
+    {"field": "$Record.Entitlement_Level__c", "operator": "EqualTo", "value": "Strategic"}
+  ],
+  "bgstm": {
+    "planning_risk": "Incorrect boolean logic can over-escalate ordinary Cases or miss strategic high-priority Cases.",
+    "traceability_id": "SF-CASE-001"
+  }
+}
