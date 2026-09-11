@@ -35,7 +35,7 @@
             <label>Qualifies For Escalation</label>
         </rules>
     </decisions>
-    <description>SF-CASE-001: escalate only High-priority Cases with Strategic entitlement.</description>
+    <description>SF-CASE-001: strategic escalation requires both High priority and Strategic entitlement.</description>
     <environments>Default</environments>
     <interviewLabel>Case Strategic Escalation {!$Flow.CurrentDateTime}</interviewLabel>
     <label>Case Strategic Escalation</label>
