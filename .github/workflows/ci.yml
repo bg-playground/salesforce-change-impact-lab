@@ -30,6 +30,20 @@ jobs:
             echo "Expected Flow semantic mutation to produce NO-GO / exit 2; got $status"
             exit 1
           fi
+      - name: Prove Permission Set baseline and mutation behavior
+        shell: bash
+        run: |
+          PERMISSION_SET="force-app/main/default/permissionsets/Sales_Rep_Opportunity_Access.permissionset-meta.xml"
+          CONTRACT="policies/SF-SEC-001.json"
+          python tools/permission_impact.py --permission-set "$PERMISSION_SET" --contract "$CONTRACT" --json-out evidence/permission-baseline.json
+          set +e
+          python tools/permission_impact.py --permission-set mutations/Sales_Rep_Opportunity_Access.finance-edit.permissionset-meta.xml --contract "$CONTRACT" --json-out evidence/permission-mutation.json
+          status=$?
+          set -e
+          if [ "$status" -ne 2 ]; then
+            echo "Expected Permission Set mutation to produce NO-GO / exit 2; got $status"
+            exit 1
+          fi
       - name: Prove PR-aware impact selection
         shell: bash
         run: |
