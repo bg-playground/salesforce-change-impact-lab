@@ -28,6 +28,9 @@ class PrImpactTests(unittest.TestCase):
         self.permission_baseline = ROOT / self.permission_set
         self.permission_mutant = ROOT / "mutations" / "Sales_Rep_Opportunity_Access.finance-edit.permissionset-meta.xml"
 
+    def evidence_map(self, *reports):
+        return {report["requirement_id"]: report for report in reports}
+
     def test_unrelated_change_is_no_impact(self):
         report = pr_impact.analyze(["README.md"], self.manifest)
         self.assertEqual("NO-IMPACT", report["decision"])
@@ -36,6 +39,7 @@ class PrImpactTests(unittest.TestCase):
     def test_relevant_change_selects_high_risk_control(self):
         report = pr_impact.analyze([self.rule], self.manifest)
         self.assertEqual("REVIEW", report["decision"])
+        self.assertEqual(["SF-OPP-001"], report["missing_semantic_evidence"])
         self.assertEqual("SF-OPP-001", report["impacted_controls"][0]["requirement_id"])
         self.assertEqual("high", report["impacted_controls"][0]["risk"])
         labels = [e["label"] for e in report["impacted_controls"][0]["selected_evidence"]]
@@ -46,43 +50,96 @@ class PrImpactTests(unittest.TestCase):
         semantic = pr_impact.run_semantic(self.baseline, self.contract)
         report = pr_impact.analyze([self.rule], self.manifest, semantic)
         self.assertEqual("GO", report["decision"])
-        self.assertEqual(0, report["semantic_evidence"]["mismatch_count"])
+        self.assertEqual(0, report["semantic_evidence"]["SF-OPP-001"]["mismatch_count"])
 
     def test_mutant_semantics_make_impacted_change_no_go(self):
         semantic = pr_impact.run_semantic(self.mutant, self.contract)
         report = pr_impact.analyze([self.rule], self.manifest, semantic)
+        evidence = report["semantic_evidence"]["SF-OPP-001"]
         self.assertEqual("NO-GO", report["decision"])
-        self.assertEqual(30, report["semantic_evidence"]["observed_threshold"])
-        self.assertGreater(report["semantic_evidence"]["mismatch_count"], 0)
+        self.assertEqual(30, evidence["observed_threshold"])
+        self.assertGreater(evidence["mismatch_count"], 0)
 
     def test_flow_baseline_semantics_make_impacted_change_go(self):
         semantic = pr_impact.run_semantic(self.flow_baseline, self.flow_contract, "flow")
         report = pr_impact.analyze([self.flow], self.manifest, semantic)
+        evidence = report["semantic_evidence"]["SF-CASE-001"]
         self.assertEqual("GO", report["decision"])
-        self.assertEqual("and", report["semantic_evidence"]["observed_logic"])
-        self.assertEqual(0, report["semantic_evidence"]["mismatch_count"])
+        self.assertEqual("and", evidence["observed_logic"])
+        self.assertEqual(0, evidence["mismatch_count"])
         self.assertIn("contract logic: AND", pr_impact.render_text(report))
 
     def test_flow_mutant_semantics_make_impacted_change_no_go(self):
         semantic = pr_impact.run_semantic(self.flow_mutant, self.flow_contract, "flow")
         report = pr_impact.analyze([self.flow], self.manifest, semantic)
+        evidence = report["semantic_evidence"]["SF-CASE-001"]
         self.assertEqual("NO-GO", report["decision"])
-        self.assertEqual("or", report["semantic_evidence"]["observed_logic"])
-        self.assertGreater(report["semantic_evidence"]["mismatch_count"], 0)
+        self.assertEqual("or", evidence["observed_logic"])
+        self.assertGreater(evidence["mismatch_count"], 0)
 
     def test_permission_baseline_semantics_make_impacted_change_go(self):
         semantic = pr_impact.run_semantic(self.permission_baseline, self.permission_contract, "permission-set")
         report = pr_impact.analyze([self.permission_set], self.manifest, semantic)
         self.assertEqual("GO", report["decision"])
         self.assertEqual("SF-SEC-001", report["impacted_controls"][0]["requirement_id"])
-        self.assertEqual(0, report["semantic_evidence"]["mismatch_count"])
+        self.assertEqual(0, report["semantic_evidence"]["SF-SEC-001"]["mismatch_count"])
         self.assertIn("Finance_Approved__c", pr_impact.render_text(report))
 
     def test_permission_mutant_semantics_make_impacted_change_no_go(self):
         semantic = pr_impact.run_semantic(self.permission_mutant, self.permission_contract, "permission-set")
         report = pr_impact.analyze([self.permission_set], self.manifest, semantic)
         self.assertEqual("NO-GO", report["decision"])
-        self.assertEqual(1, report["semantic_evidence"]["mismatch_count"])
+        self.assertEqual(1, report["semantic_evidence"]["SF-SEC-001"]["mismatch_count"])
+
+    def test_multiple_controls_all_go(self):
+        opportunity = pr_impact.run_semantic(self.baseline, self.contract)
+        flow = pr_impact.run_semantic(self.flow_baseline, self.flow_contract, "flow")
+        permission = pr_impact.run_semantic(self.permission_baseline, self.permission_contract, "permission-set")
+        report = pr_impact.analyze(
+            [self.rule, self.flow, self.permission_set],
+            self.manifest,
+            self.evidence_map(opportunity, flow, permission),
+        )
+        self.assertEqual(3, report["impact_count"])
+        self.assertEqual("GO", report["decision"])
+        self.assertEqual([], report["missing_semantic_evidence"])
+        self.assertEqual(
+            {"SF-OPP-001", "SF-CASE-001", "SF-SEC-001"},
+            set(report["semantic_evidence"]),
+        )
+
+    def test_one_no_go_blocks_multi_control_release(self):
+        opportunity = pr_impact.run_semantic(self.baseline, self.contract)
+        flow = pr_impact.run_semantic(self.flow_mutant, self.flow_contract, "flow")
+        report = pr_impact.analyze(
+            [self.rule, self.flow],
+            self.manifest,
+            self.evidence_map(opportunity, flow),
+        )
+        self.assertEqual("NO-GO", report["decision"])
+        self.assertIn("SF-CASE-001", report["reason"])
+        self.assertEqual("GO", report["semantic_evidence"]["SF-OPP-001"]["release_decision"])
+        self.assertEqual("NO-GO", report["semantic_evidence"]["SF-CASE-001"]["release_decision"])
+
+    def test_missing_semantics_keeps_multi_control_change_in_review(self):
+        opportunity = pr_impact.run_semantic(self.baseline, self.contract)
+        report = pr_impact.analyze(
+            [self.rule, self.flow],
+            self.manifest,
+            self.evidence_map(opportunity),
+        )
+        self.assertEqual("REVIEW", report["decision"])
+        self.assertEqual(["SF-CASE-001"], report["missing_semantic_evidence"])
+
+    def test_no_go_takes_precedence_over_missing_semantics(self):
+        opportunity = pr_impact.run_semantic(self.mutant, self.contract)
+        report = pr_impact.analyze(
+            [self.rule, self.flow],
+            self.manifest,
+            self.evidence_map(opportunity),
+        )
+        self.assertEqual("NO-GO", report["decision"])
+        self.assertEqual(["SF-CASE-001"], report["missing_semantic_evidence"])
 
     def test_multi_file_change_deduplicates_control(self):
         report = pr_impact.analyze([
