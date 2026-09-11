@@ -12,7 +12,7 @@ SPEC.loader.exec_module(impact_lab)
 class ImpactLabTests(unittest.TestCase):
     def setUp(self):
         self.contract = ROOT / "policies" / "SF-OPP-001.json"
-        self.baseline = ROOT / "force-app" / "main" / "default" / "objects" / "Opportunity" / "validationRules" / "High_Discount_Requires_Finance.validationRule-meta.xml"
+        self.baseline = ROOT / "tests" / "fixtures" / "baseline" / "High_Discount_Requires_Finance.validationRule-meta.xml"
         self.mutant = ROOT / "mutations" / "High_Discount_Requires_Finance.threshold-30.validationRule-meta.xml"
 
     def test_baseline_is_go(self):

@@ -16,6 +16,31 @@ The current governed controls are:
 - `SF-CASE-001` — Case Flow decision semantics
 - `SF-SEC-001` — Opportunity Permission Set access semantics
 
+## Evidence integrity: oracle baseline vs release candidate
+
+The lab deliberately separates **testing the semantic oracle** from **evaluating the Salesforce change under review**.
+
+Known-good metadata snapshots live under `tests/fixtures/baseline/`. Unit tests and Demo CI use those immutable fixtures to prove that each oracle still accepts the expected semantics. Existing files under `mutations/` prove that each oracle still rejects a known semantic regression.
+
+The PR-native workflow does **not** use those known-good fixtures as the release candidate. It evaluates the actual governed files under `force-app/...` when those files appear in the pull-request diff.
+
+```text
+oracle correctness                         release evaluation
+------------------                         ------------------
+tests/fixtures/baseline/*  -> GO           changed force-app/*
+mutations/*                -> NO-GO                |
+        |                                          v
+        v                                  PR semantic evidence
+     Demo CI                                       |
+        |                                          v
+        v                                  GO / REVIEW / NO-GO
+      GREEN
+```
+
+This separation prevents a deliberately broken release candidate from invalidating the oracle's own known-good baseline. It also makes CI failures more diagnostic: the general demo can remain healthy while the release-specific business-intent gate rejects a bad Salesforce change.
+
+The fixtures are test evidence, not an alternate source of production truth. Frozen business intent remains in `policies/`, and the actual release candidate remains the governed Salesforce metadata under `force-app/`.
+
 ## Manual CLI path
 
 The original single-control CLI remains supported:
@@ -49,19 +74,15 @@ Semantic evidence is stored by requirement ID rather than as one global result:
 ```json
 {
   "semantic_evidence": {
-    "SF-OPP-001": {
-      "release_decision": "GO"
-    },
-    "SF-CASE-001": {
-      "release_decision": "GO"
-    }
+    "SF-OPP-001": {"release_decision": "GO"},
+    "SF-CASE-001": {"release_decision": "GO"}
   }
 }
 ```
 
 ## GitHub pull-request path
 
-`.github/workflows/pr-impact.yml` derives the changed files from the PR and can now invoke **all** relevant semantic oracles in the same run.
+`.github/workflows/pr-impact.yml` derives the changed files from the PR and can invoke **all** relevant semantic oracles in the same run.
 
 For every pull request it:
 

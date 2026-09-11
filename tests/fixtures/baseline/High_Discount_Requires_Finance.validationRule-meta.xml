@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>High_Discount_Requires_Finance</fullName>
+    <active>true</active>
+    <description>SF-OPP-001 fixture: known-good Finance approval boundary.</description>
+    <errorConditionFormula>AND(
+        ISPICKVAL(StageName, "Closed Won"),
+        Discount_Percent__c &gt; 20,
+        NOT(Finance_Approved__c)
+    )</errorConditionFormula>
+    <errorMessage>Finance approval is required for discounts greater than 20% before an Opportunity can be Closed Won.</errorMessage>
+</ValidationRule>

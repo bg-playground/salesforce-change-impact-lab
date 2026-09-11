@@ -14,12 +14,12 @@ jobs:
           python-version: "3.12"
       - name: Unit tests
         run: python -m unittest discover -s tests -v
-      - name: Prove baseline and mutation behavior
+      - name: Prove isolated Validation Rule baseline and mutation behavior
         run: bash scripts/run-demo.sh
-      - name: Prove Flow baseline and mutation behavior
+      - name: Prove isolated Flow baseline and mutation behavior
         shell: bash
         run: |
-          FLOW="force-app/main/default/flows/Case_Strategic_Escalation.flow-meta.xml"
+          FLOW="tests/fixtures/baseline/Case_Strategic_Escalation.flow-meta.xml"
           CONTRACT="policies/SF-CASE-001.json"
           python tools/flow_impact.py --flow "$FLOW" --contract "$CONTRACT" --json-out evidence/flow-baseline.json
           set +e
@@ -30,10 +30,10 @@ jobs:
             echo "Expected Flow semantic mutation to produce NO-GO / exit 2; got $status"
             exit 1
           fi
-      - name: Prove Permission Set baseline and mutation behavior
+      - name: Prove isolated Permission Set baseline and mutation behavior
         shell: bash
         run: |
-          PERMISSION_SET="force-app/main/default/permissionsets/Sales_Rep_Opportunity_Access.permissionset-meta.xml"
+          PERMISSION_SET="tests/fixtures/baseline/Sales_Rep_Opportunity_Access.permissionset-meta.xml"
           CONTRACT="policies/SF-SEC-001.json"
           python tools/permission_impact.py --permission-set "$PERMISSION_SET" --contract "$CONTRACT" --json-out evidence/permission-baseline.json
           set +e
@@ -44,11 +44,12 @@ jobs:
             echo "Expected Permission Set mutation to produce NO-GO / exit 2; got $status"
             exit 1
           fi
-      - name: Prove PR-aware impact selection
+      - name: Prove PR-impact engine with isolated semantic fixtures
         shell: bash
         run: |
           RULE="force-app/main/default/objects/Opportunity/validationRules/High_Discount_Requires_Finance.validationRule-meta.xml"
-          python tools/pr_impact.py --changed "$RULE" --semantic-metadata "$RULE" --json-out evidence/pr-impact-baseline.json
+          BASELINE="tests/fixtures/baseline/High_Discount_Requires_Finance.validationRule-meta.xml"
+          python tools/pr_impact.py --changed "$RULE" --semantic-metadata "$BASELINE" --json-out evidence/pr-impact-baseline.json
           set +e
           python tools/pr_impact.py --changed "$RULE" --semantic-metadata mutations/High_Discount_Requires_Finance.threshold-30.validationRule-meta.xml --json-out evidence/pr-impact-mutation.json
           status=$?
