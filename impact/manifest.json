@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "controls": [
+    {
+      "requirement_id": "SF-OPP-001",
+      "risk": "high",
+      "components": [
+        "force-app/main/default/objects/Opportunity/validationRules/High_Discount_Requires_Finance.validationRule-meta.xml",
+        "force-app/main/default/objects/Opportunity/fields/Discount_Percent__c.field-meta.xml",
+        "force-app/main/default/objects/Opportunity/fields/Finance_Approved__c.field-meta.xml",
+        "force-app/main/default/classes/OpportunityReleaseGuard.cls"
+      ],
+      "evidence": [
+        {"id": "semantic-contract", "kind": "required", "label": "semantic contract check"},
+        {"id": "boundary-cases", "kind": "required", "label": "threshold boundary cases"},
+        {"id": "apex-guard", "kind": "required", "label": "Apex OpportunityReleaseGuardTest"},
+        {"id": "playwright-opp-07", "kind": "recommended", "label": "Playwright OPP-07", "reason": "End-to-end confirmation of the Opportunity close path."}
+      ],
+      "not_relevant": [
+        {"id": "permission-set-regression", "label": "Permission-set regression", "reason": "No permission metadata participates in SF-OPP-001."}
+      ]
+    }
+  ]
+}
