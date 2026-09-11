@@ -58,6 +58,18 @@ jobs:
             echo "Expected semantic mutation to produce NO-GO / exit 2; got $status"
             exit 1
           fi
+      - name: Prove BGSTM release evidence bundle
+        run: >-
+          python tools/bgstm_release_evidence.py
+          --pr-impact evidence/pr-impact-baseline.json
+          --project-id 00000000-0000-0000-0000-000000000039
+          --git-sha "$GITHUB_SHA"
+          --git-branch "$GITHUB_REF_NAME"
+          --ci-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          --code-analyzer passed
+          --apex-runtime passed
+          --json-out evidence/bgstm-release-evidence.json
+          --text-out evidence/bgstm-release-evidence.txt
       - name: Upload evidence
         uses: actions/upload-artifact@v4
         with:
