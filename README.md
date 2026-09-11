@@ -4,57 +4,78 @@
 
 Salesforce Change Impact Lab is a compact testing demo combining Salesforce DX conventions with ideas from [BGSTM](https://github.com/bg-playground/BGSTM), NAT-style intent validation, and Agent Crash Lab's evidence-first evaluation approach.
 
-A deliberately subtle Salesforce regression is included:
-
-- Business intent: Opportunities with a discount **greater than 20%** require Finance approval before `Closed Won`.
-- Baseline metadata enforces `> 20`.
-- Mutated metadata silently drifts to `> 30`.
-- A normal low-discount happy-path test can still pass.
-- The lab independently compares Salesforce metadata to a frozen business-intent contract and exercises boundary cases.
-- The baseline receives **GO**.
-- The mutant receives **NO-GO**, with machine-readable and HTML evidence.
-
-The core demo runs offline in seconds and does **not** require Salesforce credentials.
+The lab freezes HIGH-risk business intent, detects which governed Salesforce metadata changed, compares implementation semantics to that intent, and produces an explainable **GO / NO-GO** release decision. The core reviewer path runs offline in seconds and does **not** require Salesforce credentials.
 
 ## Live PR-native proof
 
-The repository includes a paired live experiment using the same PR-native pipeline and the same HIGH-risk business control, `SF-OPP-001`:
+Three Salesforce quality dimensions have now been exercised through paired live pull requests. In every pair, a harmless governed change receives **GO** and merges; a controlled business-intent regression receives **NO-GO** and is preserved closed and unmerged.
 
-| Control | Real pull request | Business semantics | Gate decision | Repository outcome |
-|---|---|---|---|---|
-| Positive | [PR #13](https://github.com/bg-playground/salesforce-change-impact-lab/pull/13) | Governed metadata changed while preserving the frozen `>20%` rule | **GO** | Merged |
-| Negative | [PR #15](https://github.com/bg-playground/salesforce-change-impact-lab/pull/15) | Implemented threshold drifted from `>20%` to `>30%` | **NO-GO** | CI failed intentionally; closed unmerged |
+| Requirement | Salesforce surface | GO proof | NO-GO proof |
+|---|---|---|---|
+| `SF-OPP-001` | Opportunity Validation Rule | [PR #13](https://github.com/bg-playground/salesforce-change-impact-lab/pull/13) — preserved `>20%` approval boundary; **merged** | [PR #15](https://github.com/bg-playground/salesforce-change-impact-lab/pull/15) — drifted `>20%` → `>30%`; **closed unmerged** |
+| `SF-CASE-001` | Case Flow decision | [PR #21](https://github.com/bg-playground/salesforce-change-impact-lab/pull/21) — preserved AND semantics; **merged** | [PR #23](https://github.com/bg-playground/salesforce-change-impact-lab/pull/23) — drifted AND → OR; **closed unmerged** |
+| `SF-SEC-001` | Opportunity Permission Set | [PR #27](https://github.com/bg-playground/salesforce-change-impact-lab/pull/27) — preserved Finance read-only access; **merged** | [PR #28](https://github.com/bg-playground/salesforce-change-impact-lab/pull/28) — granted Finance edit access; **closed unmerged** |
 
-The red CI on PR #15 is the successful result of the negative control, not an unresolved build failure. The gate recognized a structurally valid-looking Salesforce metadata change as business-unsafe and rejected it.
+The red CI on the negative-control PRs is the successful test result, not unresolved build debt. The gate rejected governed Salesforce changes because their implemented meaning no longer matched frozen business intent.
 
-**Same pipeline. Same business control. Opposite release decisions based on alignment to frozen intent.**
+**Numeric boundary. Boolean workflow logic. Least-privilege access. Same evidence-first release pattern.**
+
+See [Live Salesforce Release Evidence](docs/LIVE_RELEASE_EVIDENCE.md) for the full six-PR experiment, BGSTM evidence chain, release interpretation, and explicit limitations.
 
 ## Why this is different
 
-Typical Salesforce quality pipelines ask whether metadata deploys, Apex/LWC tests pass, code coverage is sufficient, and selected UI journeys still work. Those checks are necessary, but can miss a different failure mode:
+Typical Salesforce quality pipelines ask whether metadata is valid, static analysis passes, Apex/LWC tests succeed, and selected runtime or UI journeys still work. Those checks are necessary, but they can miss a different failure mode:
 
-> **The implementation is valid Salesforce, the tests are green, but the business rule itself drifted.**
+> **The implementation is valid Salesforce, but the business control itself drifted.**
 
 This lab adds a compact intent-aware layer:
 
 ```text
-Frozen business intent
-        │
-        ▼
-Salesforce metadata ──► semantic extraction
-        │                    │
-        │                    ▼
-        │              independent oracle
-        │                    │
-        ├──────────────► boundary cases
-        │                    │
-        ▼                    ▼
-standard SF checks      evidence + decision
-(Code Analyzer,         GO / NO-GO
- Apex, LWC, E2E)
+Changed Salesforce metadata
+          │
+          ▼
+ PR-aware impact selection ─────► governed requirement + risk
+          │                              │
+          ▼                              ▼
+ semantic extraction ───────────► frozen business intent
+          │                              │
+          └──────────────┬───────────────┘
+                         ▼
+                  independent oracle
+                         │
+                         ▼
+             evidence + GO / NO-GO
 ```
 
-## 60-second demo
+Conventional Salesforce checks remain part of the quality stack. Change Impact Lab adds the question: **does the changed implementation still mean what the protected business requirement says it must mean?**
+
+## Three governed controls
+
+### `SF-OPP-001` — Validation Rule boundary
+
+Business intent: Opportunities with a discount **greater than 20%** require Finance approval before `Closed Won`.
+
+- Baseline metadata enforces `>20`.
+- Controlled mutant drifts to `>30`.
+- Boundary evaluation exposes the semantic gap.
+
+### `SF-CASE-001` — Flow decision logic
+
+Business intent: strategic Case escalation requires **High priority AND Strategic entitlement**.
+
+- Baseline Flow uses AND.
+- Controlled mutant changes the decision to OR.
+- A four-way truth table exposes two incorrect outcomes.
+
+### `SF-SEC-001` — Permission Set segregation of duties
+
+Business intent: sales reps may maintain Opportunity discounts and read Finance approval, but **must not edit Finance approval**.
+
+- Baseline Permission Set has `Finance_Approved__c editable=false`.
+- Controlled mutant changes that single permission to `editable=true`.
+- The access contract records one mismatch and returns NO-GO.
+
+## 60-second Validation Rule demo
 
 ```bash
 python tools/impact_lab.py \
@@ -77,7 +98,7 @@ Expected result:
 | Baseline | 20% | 20% | **GO** |
 | Mutant | 30% | 20% | **NO-GO** |
 
-The mutation command intentionally exits non-zero. The committed unit test verifies that this failure is detected.
+The mutation command intentionally exits non-zero. The committed tests verify that the regression is detected.
 
 ## Run the tests
 
@@ -93,47 +114,48 @@ This demo is intentionally additive rather than a replacement for native Salesfo
 
 - **Salesforce DX project structure** is used for metadata.
 - **Apex tests** are included for the server-side guard example.
-- **LWC Jest** is the recommended unit-test layer when the demo is extended with Lightning Web Components.
-- **Salesforce Code Analyzer v5** is represented in CI as the static-analysis layer.
-- **End-to-end UI automation** belongs at the top of the pyramid, not as a substitute for unit and metadata-level checks.
-- The core intent proof remains offline and deterministic so reviewers can reproduce it without an org.
+- **LWC Jest** belongs at the Lightning Web Component unit-test layer when UI components are added.
+- **Salesforce Code Analyzer** remains a static-analysis layer in CI.
+- **Flow/runtime and end-to-end UI tests** provide execution evidence where appropriate.
+- **Change Impact Lab** adds PR-aware, business-intent semantic evidence and release reasoning.
+- The core proof remains offline and deterministic so public reviewers can reproduce it without an org.
 
 ## BGSTM mapping
 
 | BGSTM phase | Lab artifact |
 |---|---|
-| 1. Test Planning | `policies/SF-OPP-001.json` freezes business intent and risk |
-| 2. Test Case Development | Boundary cases are generated from the contract |
-| 3. Environment Preparation | Offline core + optional scratch-org config |
-| 4. Test Execution | Metadata extraction + independent oracle evaluation |
-| 5. Results Analysis | Semantic drift and affected cases are calculated |
-| 6. Results Reporting | JSON + deterministic HTML release evidence |
+| 1. Test Planning | Frozen `SF-OPP-001`, `SF-CASE-001`, and `SF-SEC-001` contracts define intent and risk |
+| 2. Test Case Development | Boundary cases, truth-table cases, and access expectations are derived from contracts |
+| 3. Environment Preparation | Credential-free offline core + Salesforce DX metadata + optional org-backed layers |
+| 4. Test Execution | PR-aware selection invokes the relevant semantic oracle alongside conventional checks |
+| 5. Results Analysis | Expected vs observed semantics, mismatches, and affected HIGH-risk controls are calculated |
+| 6. Results Reporting | PR summaries, machine-readable evidence, CI status, and GO / NO-GO preserve the release record |
 
-The requirement ID (`SF-OPP-001`) is carried through the contract and reports, making the evidence chain explicit.
+The requirement ID is carried from frozen intent through impact selection and evidence, making the release-decision chain explicit.
 
 ## Repository map
 
 ```text
-force-app/       Salesforce DX metadata + Apex example
+force-app/       Salesforce DX metadata + Apex examples
 policies/        Frozen business-intent contracts
 mutations/       Deliberate semantic regressions
-tools/           Deterministic intent/evidence runner
+tools/           Deterministic semantic and PR-impact runners
 tests/           Offline regression tests for the lab itself
-evidence/        Generated baseline and mutation reports
+evidence/        Generated evidence artifacts
 config/          Scratch-org definition
-.github/         CI examples
-docs/            Architecture and extension notes
+.github/         CI and PR-native impact workflows
+docs/            Architecture, semantic-control, and live-evidence notes
 ```
 
 ## Optional real-org extension
 
-The offline lab is the reviewer-friendly proof. A real project can layer on scratch-org creation, metadata deployment, Apex tests, LWC Jest tests, Salesforce Code Analyzer, targeted Playwright/UTAM E2E checks, BGSTM external-results reporting, and NAT-managed execution at scale.
+The offline lab is the reviewer-friendly proof. A real project can layer on scratch-org creation, metadata deployment, Apex tests, LWC Jest tests, Salesforce Code Analyzer, Flow/runtime tests, targeted Playwright/UTAM E2E checks, BGSTM external-results reporting, and NAT-managed execution at scale.
 
 The key idea stays the same: **use changed Salesforce metadata plus frozen intent to decide what deserves deeper testing and to explain the release risk.**
 
 ## Safety and scope
 
-This is a demonstration project. The semantic extractor intentionally supports one narrow validation-rule pattern so that the proof is easy to inspect. It should not be treated as a general Salesforce formula parser or production release gate without further hardening.
+This is a demonstration project, not a universal Salesforce semantic engine. Each extractor intentionally supports a narrow, inspectable metadata pattern. Permission analysis does not claim to calculate complete effective access across profiles, Permission Set Groups, muting permission sets, assignments, and live org state. A GO decision is scoped to the controls and evidence actually evaluated.
 
 ## License
 
