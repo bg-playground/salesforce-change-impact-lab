@@ -1,0 +1,9 @@
+{
+  "scenario": "safe-governed-metadata-change",
+  "changed_business_control": "SF-OPP-001",
+  "expected_risk": "high",
+  "expected_decision": "GO",
+  "expected_threshold": 20,
+  "observed_threshold": 20,
+  "purpose": "Document the expected reviewer-facing outcome for the first real PR-native proof."
+}
