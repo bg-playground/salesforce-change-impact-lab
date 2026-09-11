@@ -13,21 +13,48 @@ all required supplied evidence OK  -> GO
 
 A passing Code Analyzer or Apex/runtime signal can never override a semantic `NO-GO`.
 
-## Live Salesforce Code Analyzer evidence
+## SHA-bound supporting evidence
 
-The Salesforce Code Analyzer workflow now emits `code-analyzer-evidence.json` after the actual analyzer action runs. The evidence records:
+Both release-wide supporting signals now use the same evidence contract:
 
-- schema and source identity;
-- normalized `passed` / `failed` status;
-- exact Git commit SHA;
-- workflow and run provenance;
-- analyzer action outcome, exit code, and severity-1/severity-2 counts.
+```json
+{
+  "schema": "salesforce-change-impact-lab.supporting-evidence.v1",
+  "source": "salesforce-apex-runtime",
+  "status": "passed",
+  "git_sha": "abc123",
+  "run_id": "123",
+  "run_url": "https://github.com/example/repo/actions/runs/123",
+  "summary": {}
+}
+```
 
-The workflow uploads this small release-evidence file separately from the analyzer's native detailed-results artifact. The analyzer action uses `continue-on-error` only so evidence can always be written and uploaded; the final gate step preserves the existing behavior and fails the workflow for analyzer/action failure or critical/high findings.
+The release aggregator validates schema, source, status, and the expected Git SHA. Missing, malformed, wrong-source, or SHA-mismatched evidence is normalized to `not-run`, producing `REVIEW` unless a stronger `NO-GO` already exists.
 
-The release aggregator accepts the evidence only when its schema, source, status, and expected Git SHA are valid. Missing, malformed, or SHA-mismatched evidence is normalized to `not-run`, which produces `REVIEW` unless a stronger `NO-GO` already exists. This prevents evidence from a different release candidate from being trusted accidentally.
+### Salesforce Code Analyzer
 
-## CLI
+The Code Analyzer workflow emits real evidence after the actual analyzer action runs. It records action outcome, exit code, severity-1/severity-2 counts, exact Git SHA, and run provenance. The analyzer gate remains independent and still fails the workflow when appropriate.
+
+### Apex/runtime
+
+`tools/apex_runtime_evidence.py` is a dependency-free producer for authenticated runtime workflows. It does **not** execute Salesforce tests itself. A future scratch-org or authenticated CI job runs the real Apex/Flow runtime command, determines `passed` or `failed`, then invokes the producer with that result and the current Git SHA.
+
+Example after a real Apex test run:
+
+```bash
+python tools/apex_runtime_evidence.py \
+  --status passed \
+  --git-sha "$GITHUB_SHA" \
+  --runtime-kind apex-tests \
+  --run-id "$GITHUB_RUN_ID" \
+  --run-url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+  --total 12 --passed 12 --failed 0 \
+  --json-out evidence/apex-runtime-evidence.json
+```
+
+The producer can also represent Flow runtime or another org-backed execution via `--runtime-kind` without changing the release-bundle schema.
+
+## Release bundle CLI
 
 ```bash
 python tools/bgstm_release_evidence.py \
@@ -37,24 +64,36 @@ python tools/bgstm_release_evidence.py \
   --git-branch feature/example \
   --ci-url https://github.com/example/repo/actions/runs/123 \
   --code-analyzer-evidence evidence/code-analyzer-evidence.json \
-  --apex-runtime passed \
+  --apex-runtime-evidence evidence/apex-runtime-evidence.json \
   --json-out evidence/bgstm-release-evidence.json \
   --text-out evidence/bgstm-release-evidence.txt
 ```
 
-Apex/runtime remains a normalized input in this increment. It is intentionally the next supporting signal to migrate to the same evidence-file pattern.
+Both supporting cases preserve accepted source provenance inside the generated BGSTM case template.
+
+## Credential-free demo vs real runtime
+
+Demo CI deliberately uses deterministic fixtures bound to its own `GITHUB_SHA` to prove the ingestion and release-decision machinery. The Apex fixture is explicitly marked `fixture: true`. This is **not** an assertion that Apex ran in a Salesforce org.
+
+The real production path is:
+
+```text
+authenticated Salesforce runtime test
+        ↓
+actual pass/fail result
+        ↓
+apex_runtime_evidence.py
+        ↓
+SHA-bound evidence artifact
+        ↓
+validated BGSTM release bundle
+```
+
+Keeping that boundary explicit makes the public demo reproducible without credentials while preventing simulated evidence from being confused with org-backed execution.
 
 ## Evidence production vs orchestration
 
-This increment establishes **production and validation of real Code Analyzer evidence**. It does not yet make one GitHub Actions workflow download another workflow's artifact. Cross-workflow orchestration is a separate concern and should not be hidden inside the offline aggregator.
-
-Demo CI therefore creates a deterministic Code Analyzer evidence fixture for the current `GITHUB_SHA` to exercise the same ingestion path. The actual Salesforce Code Analyzer workflow produces the real artifact whenever governed `force-app/**` metadata changes. A later orchestration step can download that artifact and pass it to the unchanged aggregator interface.
-
-## Bundle shape
-
-The generated JSON contains the release decision/reason, source summary, BGSTM session request, requirement-linked case templates, finish-session request, and upload sequence. Semantic cases retain `requirement_external_ids` such as `SF-CASE-001`; Code Analyzer and Apex/runtime remain release-wide supporting cases.
-
-The Code Analyzer BGSTM case now preserves the ingested provenance in its `source` object, including the validated Git SHA and run information, instead of representing the check as a hard-coded status.
+Code Analyzer now produces a real workflow artifact, while Apex/runtime has a production-ready evidence producer for a future authenticated workflow. This increment does not make one workflow discover/download another workflow's artifact. Cross-workflow orchestration remains the next separate concern.
 
 ## BGSTM upload sequence
 
@@ -64,8 +103,4 @@ The Code Analyzer BGSTM case now preserves the ingested provenance in its `sourc
 4. `POST /api/v1/external-results/case` for each case.
 5. `PATCH /api/v1/external-results/session/{session_id}` with `finish_session_request`.
 
-The offline bundle remains credential-free while preserving a direct path to live BGSTM submission.
-
-## Future evidence sources
-
-The same pattern should next be applied to actual Apex/runtime evidence, followed by targeted Playwright journeys carrying the same requirement IDs and richer artifact references such as logs, traces, and screenshots. New evidence should enrich the release record without weakening semantic decision precedence.
+Semantic cases retain `requirement_external_ids`; supporting Code Analyzer and Apex/runtime cases remain release-wide evidence. New runtime/UI cases can later carry requirement IDs where the evidence is requirement-specific.
