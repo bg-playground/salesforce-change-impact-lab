@@ -23,6 +23,10 @@ class PrImpactTests(unittest.TestCase):
         self.flow_contract = ROOT / "policies" / "SF-CASE-001.json"
         self.flow_baseline = ROOT / self.flow
         self.flow_mutant = ROOT / "mutations" / "Case_Strategic_Escalation.logic-or.flow-meta.xml"
+        self.permission_set = "force-app/main/default/permissionsets/Sales_Rep_Opportunity_Access.permissionset-meta.xml"
+        self.permission_contract = ROOT / "policies" / "SF-SEC-001.json"
+        self.permission_baseline = ROOT / self.permission_set
+        self.permission_mutant = ROOT / "mutations" / "Sales_Rep_Opportunity_Access.finance-edit.permissionset-meta.xml"
 
     def test_unrelated_change_is_no_impact(self):
         report = pr_impact.analyze(["README.md"], self.manifest)
@@ -65,6 +69,20 @@ class PrImpactTests(unittest.TestCase):
         self.assertEqual("NO-GO", report["decision"])
         self.assertEqual("or", report["semantic_evidence"]["observed_logic"])
         self.assertGreater(report["semantic_evidence"]["mismatch_count"], 0)
+
+    def test_permission_baseline_semantics_make_impacted_change_go(self):
+        semantic = pr_impact.run_semantic(self.permission_baseline, self.permission_contract, "permission-set")
+        report = pr_impact.analyze([self.permission_set], self.manifest, semantic)
+        self.assertEqual("GO", report["decision"])
+        self.assertEqual("SF-SEC-001", report["impacted_controls"][0]["requirement_id"])
+        self.assertEqual(0, report["semantic_evidence"]["mismatch_count"])
+        self.assertIn("Finance_Approved__c", pr_impact.render_text(report))
+
+    def test_permission_mutant_semantics_make_impacted_change_no_go(self):
+        semantic = pr_impact.run_semantic(self.permission_mutant, self.permission_contract, "permission-set")
+        report = pr_impact.analyze([self.permission_set], self.manifest, semantic)
+        self.assertEqual("NO-GO", report["decision"])
+        self.assertEqual(1, report["semantic_evidence"]["mismatch_count"])
 
     def test_multi_file_change_deduplicates_control(self):
         report = pr_impact.analyze([
