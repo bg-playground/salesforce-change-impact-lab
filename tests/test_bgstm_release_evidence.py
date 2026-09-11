@@ -32,7 +32,7 @@ def accepted(source, status="passed", sha=SHA):
 
 
 class BgstmReleaseEvidenceTests(unittest.TestCase):
-    def build(self, impact, code=None, apex=None):
+    def build(self, impact, code=None, apex=None, provenance=None):
         return bgstm.build_bundle(
             impact,
             project_id=PROJECT_ID,
@@ -41,6 +41,7 @@ class BgstmReleaseEvidenceTests(unittest.TestCase):
             ci_url="https://github.com/example/repo/actions/runs/1",
             code_analyzer_evidence=code or accepted("salesforce-code-analyzer"),
             apex_runtime_evidence=apex or accepted("salesforce-apex-runtime"),
+            orchestration_provenance=provenance,
         )
 
     def test_all_required_evidence_passes_go(self):
@@ -98,6 +99,12 @@ class BgstmReleaseEvidenceTests(unittest.TestCase):
         self.assertEqual(2, len(supporting_cases))
         self.assertTrue(all(c["source"]["validation"] == "accepted" for c in supporting_cases))
         self.assertTrue(all(c["source"]["git_sha"] == SHA for c in supporting_cases))
+
+    def test_orchestration_provenance_is_retained_without_changing_decision(self):
+        provenance = {"schema": "plan.v1", "git_sha": SHA, "sources": {"pr": {"run_id": 10}}}
+        bundle = self.build(pr_impact(), provenance=provenance)
+        self.assertEqual("GO", bundle["release_decision"])
+        self.assertEqual(provenance, bundle["source_summary"]["orchestration"])
 
 
 if __name__ == "__main__":
