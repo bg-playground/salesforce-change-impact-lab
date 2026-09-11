@@ -20,7 +20,7 @@
         <defaultConnectorLabel>Does Not Qualify</defaultConnectorLabel>
         <rules>
             <name>Qualifies_For_Escalation</name>
-            <conditionLogic>and</conditionLogic>
+            <conditionLogic>or</conditionLogic>
             <conditions>
                 <leftValueReference>$Record.Priority</leftValueReference>
                 <operator>EqualTo</operator>
