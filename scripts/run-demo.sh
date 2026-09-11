@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+python tools/impact_lab.py --metadata force-app/main/default/objects/Opportunity/validationRules/High_Discount_Requires_Finance.validationRule-meta.xml --contract policies/SF-OPP-001.json --json-out evidence/baseline-report.json --html-out evidence/baseline-report.html
+set +e
+python tools/impact_lab.py --metadata mutations/High_Discount_Requires_Finance.threshold-30.validationRule-meta.xml --contract policies/SF-OPP-001.json --json-out evidence/mutation-report.json --html-out evidence/mutation-report.html
+status=$?
+set -e
+if [ "$status" -ne 2 ]; then echo "Expected mutant to be rejected with exit code 2; got $status"; exit 1; fi
+echo "PASS: baseline accepted and semantic mutant rejected."

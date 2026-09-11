@@ -1,0 +1,23 @@
+name: Demo CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  intent-evidence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Prove baseline and mutation behavior
+        run: bash scripts/run-demo.sh
+      - name: Upload evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: salesforce-change-impact-evidence
+          path: evidence/

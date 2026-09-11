@@ -1,0 +1,17 @@
+{
+  "requirement_id": "SF-OPP-001",
+  "title": "High-discount Closed Won opportunities require Finance approval",
+  "business_intent": "When an Opportunity is moved to Closed Won with Discount_Percent__c greater than 20, Finance_Approved__c must be true.",
+  "risk": "high",
+  "object": "Opportunity",
+  "stage": "Closed Won",
+  "discount_field": "Discount_Percent__c",
+  "operator": ">",
+  "threshold": 20,
+  "approval_field": "Finance_Approved__c",
+  "expected_error": "Finance approval is required for discounts greater than 20% before an Opportunity can be Closed Won.",
+  "bgstm": {
+    "planning_risk": "Revenue leakage / unauthorized discounting",
+    "traceability_id": "SF-OPP-001"
+  }
+}
