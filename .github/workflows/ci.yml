@@ -49,12 +49,12 @@ jobs:
           status=$?
           set -e
           if [ "$status" -ne 2 ]; then echo "Expected semantic mutation NO-GO; got $status"; exit 1; fi
-      - name: Create deterministic Code Analyzer ingestion fixture
+      - name: Create deterministic supporting evidence fixtures
         run: |
           python - <<'PY'
           import json, os
           from pathlib import Path
-          payload = {
+          code = {
               "schema": "salesforce-change-impact-lab.supporting-evidence.v1",
               "source": "salesforce-code-analyzer",
               "status": "passed",
@@ -63,8 +63,17 @@ jobs:
               "run_url": "demo-ci",
               "summary": {"fixture": True},
           }
-          Path("evidence/code-analyzer-demo-evidence.json").write_text(json.dumps(payload, indent=2) + "\n")
+          Path("evidence/code-analyzer-demo-evidence.json").write_text(json.dumps(code, indent=2) + "\n")
           PY
+          python tools/apex_runtime_evidence.py \
+            --status passed \
+            --git-sha "$GITHUB_SHA" \
+            --runtime-kind apex-tests \
+            --run-id demo-fixture \
+            --run-url demo-ci \
+            --total 1 --passed 1 --failed 0 \
+            --fixture \
+            --json-out evidence/apex-runtime-demo-evidence.json
       - name: Prove BGSTM release evidence bundle
         run: >-
           python tools/bgstm_release_evidence.py
@@ -74,7 +83,7 @@ jobs:
           --git-branch "$GITHUB_REF_NAME"
           --ci-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           --code-analyzer-evidence evidence/code-analyzer-demo-evidence.json
-          --apex-runtime passed
+          --apex-runtime-evidence evidence/apex-runtime-demo-evidence.json
           --json-out evidence/bgstm-release-evidence.json
           --text-out evidence/bgstm-release-evidence.txt
       - name: Upload evidence
