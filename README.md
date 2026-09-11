@@ -22,6 +22,30 @@ The red CI on the negative-control PRs is the successful test result, not unreso
 
 See [Live Salesforce Release Evidence](docs/LIVE_RELEASE_EVIDENCE.md) for the full six-PR experiment, BGSTM evidence chain, release interpretation, and explicit limitations.
 
+### Isolated multi-control release signal
+
+[PR #38](https://github.com/bg-playground/salesforce-change-impact-lab/pull/38) then exercised two governed controls in one release candidate after the oracle fixtures were isolated from live metadata:
+
+```text
+Demo CI                    GREEN
+Salesforce Code Analyzer   GREEN
+PR Change Impact           RED / NO-GO
+
+SF-OPP-001                 GO      (0 mismatches)
+SF-CASE-001                NO-GO   (2 mismatches)
+Aggregate release          NO-GO
+```
+
+That result is the core thesis in one PR: healthy test machinery and structurally valid Salesforce metadata can coexist with a business-unsafe release candidate.
+
+## BGSTM-compatible release evidence
+
+`tools/bgstm_release_evidence.py` turns requirement-aware PR impact evidence plus normalized supporting signals into one deterministic release bundle aligned with BGSTM External Results v1. It emits a session request, requirement-linked case-result templates, a finish-session request, and one release decision without making network calls or requiring secrets.
+
+Passing static analysis or runtime evidence can never mask a semantic `NO-GO`. Missing required evidence produces `REVIEW`; any failed required signal produces `NO-GO`; all required supplied evidence must pass for `GO`.
+
+See [BGSTM-compatible Release Evidence](docs/BGSTM_RELEASE_EVIDENCE.md) for the CLI, bundle shape, upload sequence, and future Playwright/runtime integration path.
+
 ## Why this is different
 
 Typical Salesforce quality pipelines ask whether metadata is valid, static analysis passes, Apex/LWC tests succeed, and selected runtime or UI journeys still work. Those checks are necessary, but they can miss a different failure mode:
@@ -129,7 +153,7 @@ This demo is intentionally additive rather than a replacement for native Salesfo
 | 3. Environment Preparation | Credential-free offline core + Salesforce DX metadata + optional org-backed layers |
 | 4. Test Execution | PR-aware selection invokes the relevant semantic oracle alongside conventional checks |
 | 5. Results Analysis | Expected vs observed semantics, mismatches, and affected HIGH-risk controls are calculated |
-| 6. Results Reporting | PR summaries, machine-readable evidence, CI status, and GO / NO-GO preserve the release record |
+| 6. Results Reporting | PR summaries, machine-readable evidence, CI status, GO / NO-GO, and BGSTM-compatible release bundles preserve the release record |
 
 The requirement ID is carried from frozen intent through impact selection and evidence, making the release-decision chain explicit.
 
@@ -139,7 +163,7 @@ The requirement ID is carried from frozen intent through impact selection and ev
 force-app/       Salesforce DX metadata + Apex examples
 policies/        Frozen business-intent contracts
 mutations/       Deliberate semantic regressions
-tools/           Deterministic semantic and PR-impact runners
+tools/           Deterministic semantic, PR-impact, and release-evidence runners
 tests/           Offline regression tests for the lab itself
 evidence/        Generated evidence artifacts
 config/          Scratch-org definition
