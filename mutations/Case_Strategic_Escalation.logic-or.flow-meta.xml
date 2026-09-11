@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <decisions>
+        <name>Evaluate_Strategic_Escalation</name>
+        <label>Evaluate Strategic Escalation</label>
+        <locationX>176</locationX>
+        <locationY>200</locationY>
+        <defaultConnectorLabel>Does Not Qualify</defaultConnectorLabel>
+        <rules>
+            <name>Qualifies_For_Escalation</name>
+            <conditionLogic>or</conditionLogic>
+            <conditions><leftValueReference>$Record.Priority</leftValueReference><operator>EqualTo</operator><rightValue><stringValue>High</stringValue></rightValue></conditions>
+            <conditions><leftValueReference>$Record.Entitlement_Level__c</leftValueReference><operator>EqualTo</operator><rightValue><stringValue>Strategic</stringValue></rightValue></conditions>
+            <label>Qualifies For Escalation</label>
+        </rules>
+    </decisions>
+    <description>Controlled SF-CASE-001 mutation: AND weakened to OR.</description>
+    <environments>Default</environments>
+    <interviewLabel>Case Strategic Escalation Mutation {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Case Strategic Escalation Mutation</label>
+    <processType>AutoLaunchedFlow</processType>
+    <status>Draft</status>
+</Flow>

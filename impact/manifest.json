@@ -19,6 +19,23 @@
       "not_relevant": [
         {"id": "permission-set-regression", "label": "Permission-set regression", "reason": "No permission metadata participates in SF-OPP-001."}
       ]
+    },
+    {
+      "requirement_id": "SF-CASE-001",
+      "risk": "high",
+      "components": [
+        "force-app/main/default/flows/Case_Strategic_Escalation.flow-meta.xml",
+        "force-app/main/default/objects/Case/fields/Entitlement_Level__c.field-meta.xml"
+      ],
+      "evidence": [
+        {"id": "flow-semantic-contract", "kind": "required", "label": "Flow decision semantic contract"},
+        {"id": "boolean-boundary-cases", "kind": "required", "label": "four-way boolean boundary matrix"},
+        {"id": "flow-runtime-test", "kind": "recommended", "label": "Salesforce Flow runtime test", "reason": "Org-backed confirmation that the record-triggered Flow follows the reviewed decision path."},
+        {"id": "playwright-case-escalation", "kind": "recommended", "label": "Playwright Case escalation journey", "reason": "End-to-end confirmation of visible escalation behavior."}
+      ],
+      "not_relevant": [
+        {"id": "opportunity-apex-guard", "label": "OpportunityReleaseGuardTest", "reason": "Opportunity-specific Apex does not participate in SF-CASE-001."}
+      ]
     }
   ]
 }

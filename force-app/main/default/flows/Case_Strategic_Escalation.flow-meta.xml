@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <assignments>
+        <name>Mark_For_Escalation</name>
+        <label>Mark For Escalation</label>
+        <locationX>176</locationX>
+        <locationY>300</locationY>
+        <assignmentItems>
+            <assignToReference>shouldEscalate</assignToReference>
+            <operator>Assign</operator>
+            <value><booleanValue>true</booleanValue></value>
+        </assignmentItems>
+    </assignments>
+    <decisions>
+        <name>Evaluate_Strategic_Escalation</name>
+        <label>Evaluate Strategic Escalation</label>
+        <locationX>176</locationX>
+        <locationY>200</locationY>
+        <defaultConnectorLabel>Does Not Qualify</defaultConnectorLabel>
+        <rules>
+            <name>Qualifies_For_Escalation</name>
+            <conditionLogic>and</conditionLogic>
+            <conditions>
+                <leftValueReference>$Record.Priority</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue><stringValue>High</stringValue></rightValue>
+            </conditions>
+            <conditions>
+                <leftValueReference>$Record.Entitlement_Level__c</leftValueReference>
+                <operator>EqualTo</operator>
+                <rightValue><stringValue>Strategic</stringValue></rightValue>
+            </conditions>
+            <connector><targetReference>Mark_For_Escalation</targetReference></connector>
+            <label>Qualifies For Escalation</label>
+        </rules>
+    </decisions>
+    <description>SF-CASE-001: escalate only High-priority Cases with Strategic entitlement.</description>
+    <environments>Default</environments>
+    <interviewLabel>Case Strategic Escalation {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>Case Strategic Escalation</label>
+    <processType>AutoLaunchedFlow</processType>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector><targetReference>Evaluate_Strategic_Escalation</targetReference></connector>
+        <filterLogic>and</filterLogic>
+        <filters>
+            <field>Priority</field>
+            <operator>IsNull</operator>
+            <value><booleanValue>false</booleanValue></value>
+        </filters>
+        <object>Case</object>
+        <recordTriggerType>CreateAndUpdate</recordTriggerType>
+        <triggerType>RecordAfterSave</triggerType>
+    </start>
+    <status>Active</status>
+    <variables>
+        <name>shouldEscalate</name>
+        <dataType>Boolean</dataType>
+        <isCollection>false</isCollection>
+        <isInput>false</isInput>
+        <isOutput>false</isOutput>
+        <value><booleanValue>false</booleanValue></value>
+    </variables>
+</Flow>
