@@ -34,6 +34,7 @@ jobs:
         run: |
           RULE="force-app/main/default/objects/Opportunity/validationRules/High_Discount_Requires_Finance.validationRule-meta.xml"
           FLOW="force-app/main/default/flows/Case_Strategic_Escalation.flow-meta.xml"
+          PERMISSION_SET="force-app/main/default/permissionsets/Sales_Rep_Opportunity_Access.permissionset-meta.xml"
           semantic_args=()
 
           if grep -Fxq "$RULE" changed-files.txt; then
@@ -47,6 +48,12 @@ jobs:
               --semantic-metadata "$FLOW"
               --semantic-kind flow
               --contract policies/SF-CASE-001.json
+            )
+          elif grep -Fxq "$PERMISSION_SET" changed-files.txt; then
+            semantic_args=(
+              --semantic-metadata "$PERMISSION_SET"
+              --semantic-kind permission-set
+              --contract policies/SF-SEC-001.json
             )
           fi
 
