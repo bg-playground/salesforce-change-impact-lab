@@ -16,6 +16,20 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Prove baseline and mutation behavior
         run: bash scripts/run-demo.sh
+      - name: Prove Flow baseline and mutation behavior
+        shell: bash
+        run: |
+          FLOW="force-app/main/default/flows/Case_Strategic_Escalation.flow-meta.xml"
+          CONTRACT="policies/SF-CASE-001.json"
+          python tools/flow_impact.py --flow "$FLOW" --contract "$CONTRACT" --json-out evidence/flow-baseline.json
+          set +e
+          python tools/flow_impact.py --flow mutations/Case_Strategic_Escalation.logic-or.flow-meta.xml --contract "$CONTRACT" --json-out evidence/flow-mutation.json
+          status=$?
+          set -e
+          if [ "$status" -ne 2 ]; then
+            echo "Expected Flow semantic mutation to produce NO-GO / exit 2; got $status"
+            exit 1
+          fi
       - name: Prove PR-aware impact selection
         shell: bash
         run: |
