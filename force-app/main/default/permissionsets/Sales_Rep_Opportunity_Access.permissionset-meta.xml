@@ -7,7 +7,7 @@
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>
-        <editable>false</editable>
+        <editable>true</editable>
         <field>Opportunity.Finance_Approved__c</field>
         <readable>true</readable>
     </fieldPermissions>
