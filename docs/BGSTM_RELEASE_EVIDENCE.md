@@ -1,33 +1,31 @@
 # BGSTM-compatible release evidence
 
-Salesforce Change Impact Lab can roll its requirement-aware semantic evidence together with supporting release signals and emit a deterministic handoff bundle aligned with the BGSTM External Results v1 contract.
-
-This is an **offline adapter**, not a BGSTM client. It makes no network calls, stores no runner token, and does not require a Salesforce org. Its job is to turn independent quality signals into one auditable release decision plus submission-ready payload templates.
-
-## Why this layer exists
-
-The lab now answers three different quality questions:
-
-1. Is the testing machinery itself healthy?
-2. Is the Salesforce implementation structurally/static-analysis valid?
-3. Does the implementation still satisfy frozen business intent?
-
-PR #38 proved those signals can disagree in a meaningful way: ordinary Demo CI and Salesforce Code Analyzer can pass while the business-intent gate correctly rejects the release candidate.
-
-The release-evidence layer preserves that distinction rather than flattening everything into a generic pass/fail counter.
+Salesforce Change Impact Lab rolls requirement-aware semantic evidence together with supporting release signals into a deterministic handoff bundle aligned with BGSTM External Results v1. The adapter makes no BGSTM network calls and requires no Salesforce org credentials.
 
 ## Decision precedence
-
-The roll-up is intentionally conservative:
 
 ```text
 business-intent NO-GO              -> NO-GO
 required supporting signal failed  -> NO-GO
-required evidence missing          -> REVIEW
+required evidence missing/rejected -> REVIEW
 all required supplied evidence OK  -> GO
 ```
 
 A passing Code Analyzer or Apex/runtime signal can never override a semantic `NO-GO`.
+
+## Live Salesforce Code Analyzer evidence
+
+The Salesforce Code Analyzer workflow now emits `code-analyzer-evidence.json` after the actual analyzer action runs. The evidence records:
+
+- schema and source identity;
+- normalized `passed` / `failed` status;
+- exact Git commit SHA;
+- workflow and run provenance;
+- analyzer action outcome, exit code, and severity-1/severity-2 counts.
+
+The workflow uploads this small release-evidence file separately from the analyzer's native detailed-results artifact. The analyzer action uses `continue-on-error` only so evidence can always be written and uploaded; the final gate step preserves the existing behavior and fails the workflow for analyzer/action failure or critical/high findings.
+
+The release aggregator accepts the evidence only when its schema, source, status, and expected Git SHA are valid. Missing, malformed, or SHA-mismatched evidence is normalized to `not-run`, which produces `REVIEW` unless a stronger `NO-GO` already exists. This prevents evidence from a different release candidate from being trusted accidentally.
 
 ## CLI
 
@@ -38,48 +36,27 @@ python tools/bgstm_release_evidence.py \
   --git-sha abc123 \
   --git-branch feature/example \
   --ci-url https://github.com/example/repo/actions/runs/123 \
-  --code-analyzer passed \
+  --code-analyzer-evidence evidence/code-analyzer-evidence.json \
   --apex-runtime passed \
   --json-out evidence/bgstm-release-evidence.json \
   --text-out evidence/bgstm-release-evidence.txt
 ```
 
-Supporting statuses are normalized to `passed`, `failed`, or `not-run`. `not-run` means required evidence is missing and therefore produces `REVIEW` unless a stronger `NO-GO` already exists.
+Apex/runtime remains a normalized input in this increment. It is intentionally the next supporting signal to migrate to the same evidence-file pattern.
 
-Demo CI passes deterministic `passed` fixture statuses to prove bundle generation. That CI step is **not** claiming to ingest the result of the separate Salesforce Code Analyzer workflow. A future orchestration increment can supply actual workflow outcomes without changing the bundle schema.
+## Evidence production vs orchestration
+
+This increment establishes **production and validation of real Code Analyzer evidence**. It does not yet make one GitHub Actions workflow download another workflow's artifact. Cross-workflow orchestration is a separate concern and should not be hidden inside the offline aggregator.
+
+Demo CI therefore creates a deterministic Code Analyzer evidence fixture for the current `GITHUB_SHA` to exercise the same ingestion path. The actual Salesforce Code Analyzer workflow produces the real artifact whenever governed `force-app/**` metadata changes. A later orchestration step can download that artifact and pass it to the unchanged aggregator interface.
 
 ## Bundle shape
 
-The generated JSON contains:
+The generated JSON contains the release decision/reason, source summary, BGSTM session request, requirement-linked case templates, finish-session request, and upload sequence. Semantic cases retain `requirement_external_ids` such as `SF-CASE-001`; Code Analyzer and Apex/runtime remain release-wide supporting cases.
 
-- `release_decision` and `release_reason`;
-- `source_summary` showing the contributing signals;
-- `bgstm_external_results_v1.session_request`;
-- `bgstm_external_results_v1.case_templates`;
-- `bgstm_external_results_v1.finish_session_request`;
-- an explicit upload sequence.
+The Code Analyzer BGSTM case now preserves the ingested provenance in its `source` object, including the validated Git SHA and run information, instead of representing the check as a hard-coded status.
 
-Each semantic case has a stable external ID and links directly to the frozen requirement by BGSTM external ID:
-
-```json
-{
-  "external_id": "salesforce-change-impact-lab:SF-CASE-001:semantic",
-  "title": "SF-CASE-001 semantic business-intent check",
-  "outcome": "failed",
-  "duration_ms": 0,
-  "error_message": "Business-intent drift detected; mismatches=2.",
-  "requirement_external_ids": ["SF-CASE-001"],
-  "auto_register_requirements": false
-}
-```
-
-The tool also emits release-wide cases for Salesforce Code Analyzer and Apex/runtime evidence. These currently have an empty `requirement_external_ids` list because they are supporting release signals rather than requirement-specific evidence.
-
-## Why case templates do not contain `session_id`
-
-BGSTM External Results v1 creates the session first. The server returns the actual session UUID, and every case result submitted afterward must reference that UUID.
-
-For that reason, the offline bundle contains **case templates** rather than pretending a session ID already exists. The intended upload sequence is:
+## BGSTM upload sequence
 
 1. `POST /api/v1/external-results/session` with `session_request`.
 2. Read the returned session UUID.
@@ -87,30 +64,8 @@ For that reason, the offline bundle contains **case templates** rather than pret
 4. `POST /api/v1/external-results/case` for each case.
 5. `PATCH /api/v1/external-results/session/{session_id}` with `finish_session_request`.
 
-This keeps the public demo credential-free while making the eventual live BGSTM integration straightforward.
-
-## Requirement-centered evidence
-
-Multi-control semantic evidence remains separate even though the release gets one final decision:
-
-```text
-SF-OPP-001 semantic evidence   -> passed
-SF-CASE-001 semantic evidence  -> failed
-Code Analyzer                  -> passed
-Apex/runtime                   -> passed
-                                  -----
-Release                        -> NO-GO
-```
-
-That is important for BGSTM traceability: reviewers can see both the release-level decision and which frozen requirement caused it.
+The offline bundle remains credential-free while preserving a direct path to live BGSTM submission.
 
 ## Future evidence sources
 
-The output model is designed to accept additional case templates without changing the release contract. Planned examples include:
-
-- targeted Playwright journeys carrying the same `requirement_external_ids`;
-- org-backed Flow runtime checks;
-- richer Apex execution evidence;
-- artifact references such as logs, screenshots, traces, and machine-readable reports.
-
-Those additions should enrich the evidence set, not weaken the existing semantic decision precedence.
+The same pattern should next be applied to actual Apex/runtime evidence, followed by targeted Playwright journeys carrying the same requirement IDs and richer artifact references such as logs, traces, and screenshots. New evidence should enrich the release record without weakening semantic decision precedence.
