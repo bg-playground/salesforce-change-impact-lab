@@ -4,7 +4,7 @@ ROOT=Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location("flow_impact",ROOT/"tools"/"flow_impact.py"); flow_impact=importlib.util.module_from_spec(spec); sys.modules[spec.name]=flow_impact; spec.loader.exec_module(flow_impact)
 class FlowImpactTests(unittest.TestCase):
     contract=ROOT/"policies"/"SF-CASE-001.json"
-    baseline=ROOT/"force-app"/"main"/"default"/"flows"/"Case_Strategic_Escalation.flow-meta.xml"
+    baseline=ROOT/"tests"/"fixtures"/"baseline"/"Case_Strategic_Escalation.flow-meta.xml"
     mutant=ROOT/"mutations"/"Case_Strategic_Escalation.logic-or.flow-meta.xml"
     def test_baseline_is_go(self):
         r=flow_impact.analyze(self.baseline,self.contract); self.assertEqual("GO",r["release_decision"]); self.assertEqual(0,r["mismatch_count"]); self.assertEqual(4,r["case_count"])
