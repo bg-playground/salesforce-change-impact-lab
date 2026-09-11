@@ -22,7 +22,7 @@ class PrImpactTests(unittest.TestCase):
         self.flow = "force-app/main/default/flows/Case_Strategic_Escalation.flow-meta.xml"
         self.flow_contract = ROOT / "policies" / "SF-CASE-001.json"
         self.flow_baseline = ROOT / self.flow
-        self.flow_mutant = ROOT / "mutations" / "Case_Strategic_Escalation.or-logic.flow-meta.xml"
+        self.flow_mutant = ROOT / "mutations" / "Case_Strategic_Escalation.logic-or.flow-meta.xml"
 
     def test_unrelated_change_is_no_impact(self):
         report = pr_impact.analyze(["README.md"], self.manifest)
