@@ -1,0 +1,78 @@
+name: PR Change Impact
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  pr-impact:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out pull request
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Derive changed files from pull request
+        shell: bash
+        run: |
+          git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" > changed-files.txt
+          echo "Changed files:"
+          cat changed-files.txt
+
+      - name: Analyze business-control impact
+        id: impact
+        shell: bash
+        run: |
+          RULE="force-app/main/default/objects/Opportunity/validationRules/High_Discount_Requires_Finance.validationRule-meta.xml"
+          semantic_args=()
+          if grep -Fxq "$RULE" changed-files.txt; then
+            semantic_args=(--semantic-metadata "$RULE")
+          fi
+
+          set +e
+          python tools/pr_impact.py \
+            --changed-file changed-files.txt \
+            "${semantic_args[@]}" \
+            --json-out evidence/pr-native-impact.json \
+            --text-out evidence/pr-native-impact.txt
+          status=$?
+          set -e
+
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Salesforce Change Impact Lab"
+            echo
+            echo '```text'
+            cat evidence/pr-native-impact.txt
+            echo '```'
+            echo
+            echo "Machine-readable evidence: \`evidence/pr-native-impact.json\` (uploaded as workflow artifact)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$status" -eq 2 ]; then
+            echo "Business-intent gate returned NO-GO."
+            exit 2
+          elif [ "$status" -ne 0 ]; then
+            echo "Impact analysis failed unexpectedly with exit code $status."
+            exit "$status"
+          fi
+
+      - name: Upload PR impact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-change-impact-evidence
+          path: |
+            changed-files.txt
+            evidence/pr-native-impact.json
+            evidence/pr-native-impact.txt

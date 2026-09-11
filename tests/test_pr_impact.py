@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,6 +55,12 @@ class PrImpactTests(unittest.TestCase):
         ], self.manifest)
         self.assertEqual(1, report["impact_count"])
         self.assertEqual(2, len(report["impacted_controls"][0]["matched_components"]))
+
+    def test_changed_file_loader_normalizes_blank_lines(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            changed_file = Path(tmp) / "changed-files.txt"
+            changed_file.write_text(f"README.md\n\n{self.rule}\n", encoding="utf-8")
+            self.assertEqual(["README.md", self.rule], pr_impact.load_changed_file(changed_file))
 
 
 if __name__ == "__main__":

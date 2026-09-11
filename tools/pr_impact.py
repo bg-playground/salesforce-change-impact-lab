@@ -12,6 +12,11 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def load_changed_file(path: Path) -> list[str]:
+    """Load one repository-relative changed path per line."""
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
 def run_semantic(metadata: Path, contract: Path) -> dict:
     tool = Path(__file__).with_name("impact_lab.py")
     spec = importlib.util.spec_from_file_location("impact_lab_for_pr", tool)
@@ -91,17 +96,26 @@ def render_text(report: dict) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, default=Path("impact/manifest.json"))
-    parser.add_argument("--changed", nargs="+", required=True)
+    changed_group = parser.add_mutually_exclusive_group(required=True)
+    changed_group.add_argument("--changed", nargs="+")
+    changed_group.add_argument("--changed-file", type=Path)
     parser.add_argument("--semantic-metadata", type=Path)
     parser.add_argument("--contract", type=Path, default=Path("policies/SF-OPP-001.json"))
     parser.add_argument("--json-out", type=Path)
+    parser.add_argument("--text-out", type=Path)
     args = parser.parse_args()
+
+    changed = args.changed if args.changed is not None else load_changed_file(args.changed_file)
     semantic = run_semantic(args.semantic_metadata, args.contract) if args.semantic_metadata else None
-    report = analyze(args.changed, load_json(args.manifest), semantic)
-    print(render_text(report))
+    report = analyze(changed, load_json(args.manifest), semantic)
+    rendered = render_text(report)
+    print(rendered)
     if args.json_out:
         args.json_out.parent.mkdir(parents=True, exist_ok=True)
         args.json_out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    if args.text_out:
+        args.text_out.parent.mkdir(parents=True, exist_ok=True)
+        args.text_out.write_text(rendered + "\n", encoding="utf-8")
     return 2 if report["decision"] == "NO-GO" else 0
 
 
