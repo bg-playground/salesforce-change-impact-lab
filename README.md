@@ -16,6 +16,19 @@ A deliberately subtle Salesforce regression is included:
 
 The core demo runs offline in seconds and does **not** require Salesforce credentials.
 
+## Live PR-native proof
+
+The repository includes a paired live experiment using the same PR-native pipeline and the same HIGH-risk business control, `SF-OPP-001`:
+
+| Control | Real pull request | Business semantics | Gate decision | Repository outcome |
+|---|---|---|---|---|
+| Positive | [PR #13](https://github.com/bg-playground/salesforce-change-impact-lab/pull/13) | Governed metadata changed while preserving the frozen `>20%` rule | **GO** | Merged |
+| Negative | [PR #15](https://github.com/bg-playground/salesforce-change-impact-lab/pull/15) | Implemented threshold drifted from `>20%` to `>30%` | **NO-GO** | CI failed intentionally; closed unmerged |
+
+The red CI on PR #15 is the successful result of the negative control, not an unresolved build failure. The gate recognized a structurally valid-looking Salesforce metadata change as business-unsafe and rejected it.
+
+**Same pipeline. Same business control. Opposite release decisions based on alignment to frozen intent.**
+
 ## Why this is different
 
 Typical Salesforce quality pipelines ask whether metadata deploys, Apex/LWC tests pass, code coverage is sufficient, and selected UI journeys still work. Those checks are necessary, but can miss a different failure mode:
