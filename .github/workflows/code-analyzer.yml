@@ -27,6 +27,7 @@ jobs:
           ANALYZER_EXIT_CODE: ${{ steps.run-code-analyzer.outputs.exit-code }}
           SEV1: ${{ steps.run-code-analyzer.outputs.num-sev1-violations }}
           SEV2: ${{ steps.run-code-analyzer.outputs.num-sev2-violations }}
+          EVIDENCE_GIT_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           mkdir -p evidence
           python - <<'PY'
@@ -49,7 +50,7 @@ jobs:
               "schema": "salesforce-change-impact-lab.supporting-evidence.v1",
               "source": "salesforce-code-analyzer",
               "status": status,
-              "git_sha": os.environ["GITHUB_SHA"],
+              "git_sha": os.environ["EVIDENCE_GIT_SHA"],
               "workflow": os.environ["GITHUB_WORKFLOW"],
               "run_id": os.environ["GITHUB_RUN_ID"],
               "run_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
