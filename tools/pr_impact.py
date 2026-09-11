@@ -31,6 +31,8 @@ def run_semantic(metadata: Path, contract: Path, kind: str = "validation-rule") 
         module = _load_tool("impact_lab.py", "impact_lab_for_pr")
     elif kind == "flow":
         module = _load_tool("flow_impact.py", "flow_impact_for_pr")
+    elif kind == "permission-set":
+        module = _load_tool("permission_impact.py", "permission_impact_for_pr")
     else:
         raise ValueError(f"Unsupported semantic kind: {kind}")
     return module.analyze(metadata, contract)
@@ -104,6 +106,13 @@ def render_text(report: dict) -> str:
                 f"  metadata logic: {semantic['observed_logic'].upper()}",
                 f"  conditions aligned: {semantic['conditions_aligned']}",
             ]
+        elif "permission_set" in semantic:
+            lines.append(f"  permission set: {semantic['permission_set']}")
+            for row in semantic["field_permissions"]:
+                lines.append(
+                    f"  {row['field']}: readable={row['observed']['readable']} "
+                    f"editable={row['observed']['editable']} intent_match={row['matches_intent']}"
+                )
         lines.append(f"  mismatches: {semantic['mismatch_count']}")
     lines += ["", f"Decision: {report['decision']}", f"Reason: {report['reason']}"]
     return "\n".join(lines)
@@ -116,7 +125,7 @@ def main() -> int:
     changed_group.add_argument("--changed", nargs="+")
     changed_group.add_argument("--changed-file", type=Path)
     parser.add_argument("--semantic-metadata", type=Path)
-    parser.add_argument("--semantic-kind", choices=("validation-rule", "flow"), default="validation-rule")
+    parser.add_argument("--semantic-kind", choices=("validation-rule", "flow", "permission-set"), default="validation-rule")
     parser.add_argument("--contract", type=Path, default=Path("policies/SF-OPP-001.json"))
     parser.add_argument("--json-out", type=Path)
     parser.add_argument("--text-out", type=Path)
