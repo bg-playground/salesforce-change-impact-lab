@@ -1,0 +1,27 @@
+name: Salesforce Code Analyzer
+
+on:
+  pull_request:
+    paths:
+      - "force-app/**"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run Salesforce Code Analyzer v5
+        id: run-code-analyzer
+        uses: forcedotcom/run-code-analyzer@v2
+        with:
+          run-arguments: >-
+            --workspace force-app
+            --view detail
+            --output-file sfca_results.json
+          results-artifact-name: salesforce-code-analyzer-results
+      - name: Gate critical/high findings
+        if: >-
+          steps.run-code-analyzer.outputs.exit-code > 0 ||
+          steps.run-code-analyzer.outputs.num-sev1-violations > 0 ||
+          steps.run-code-analyzer.outputs.num-sev2-violations > 0
+        run: exit 1
