@@ -5,7 +5,7 @@
     <description>SF-OPP-001: Require Finance approval for discounts above 20% before an Opportunity reaches Closed Won.</description>
     <errorConditionFormula>AND(
         ISPICKVAL(StageName, "Closed Won"),
-        Discount_Percent__c &gt; 20,
+        Discount_Percent__c &gt; 30,
         NOT(Finance_Approved__c)
     )</errorConditionFormula>
     <errorMessage>Finance approval is required for discounts greater than 20% before an Opportunity can be Closed Won.</errorMessage>
