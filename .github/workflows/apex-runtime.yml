@@ -1,0 +1,117 @@
+name: Salesforce Apex Runtime
+
+on:
+  pull_request:
+    paths:
+      - "force-app/**"
+      - "policies/**"
+      - "tools/apex_runtime_evidence.py"
+      - ".github/workflows/apex-runtime.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apex-runtime:
+    runs-on: ubuntu-latest
+    env:
+      SF_ACCESS_TOKEN: ${{ secrets.SF_ACCESS_TOKEN }}
+      SF_INSTANCE_URL: ${{ secrets.SF_INSTANCE_URL }}
+    steps:
+      - name: Detect authenticated runtime configuration
+        id: config
+        shell: bash
+        run: |
+          if [ -n "$SF_ACCESS_TOKEN" ] && [ -n "$SF_INSTANCE_URL" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "Salesforce runtime credentials are not configured; no runtime evidence will be emitted."
+          fi
+
+      - name: Check out pull request
+        if: steps.config.outputs.configured == 'true'
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        if: steps.config.outputs.configured == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Salesforce CLI
+        if: steps.config.outputs.configured == 'true'
+        run: npm install --global @salesforce/cli
+
+      - name: Authenticate Salesforce org
+        if: steps.config.outputs.configured == 'true'
+        run: |
+          printf '%s' "$SF_ACCESS_TOKEN" | sf org login access-token \
+            --instance-url "$SF_INSTANCE_URL" \
+            --alias ci-runtime \
+            --set-default \
+            --no-prompt
+
+      - name: Run org-backed Apex guard tests
+        if: steps.config.outputs.configured == 'true'
+        id: apex
+        shell: bash
+        run: |
+          mkdir -p evidence
+          set +e
+          sf apex run test \
+            --class-names OpportunityReleaseGuardTest \
+            --target-org ci-runtime \
+            --wait 20 \
+            --result-format json \
+            --json \
+            > evidence/salesforce-apex-test-result.json
+          status=$?
+          set -e
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Emit SHA-bound Apex runtime evidence
+        if: always() && steps.config.outputs.configured == 'true'
+        env:
+          APEX_EXIT_CODE: ${{ steps.apex.outputs.exit_code }}
+          EVIDENCE_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: bash
+        run: |
+          if [ "${APEX_EXIT_CODE:-1}" -eq 0 ]; then
+            STATUS=passed
+          else
+            STATUS=failed
+          fi
+          python tools/apex_runtime_evidence.py \
+            --status "$STATUS" \
+            --git-sha "$EVIDENCE_GIT_SHA" \
+            --runtime-kind "authenticated-apex-tests" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --json-out evidence/apex-runtime-evidence.json
+
+      - name: Upload authenticated runtime evidence
+        if: always() && steps.config.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: salesforce-apex-runtime-evidence
+          path: |
+            evidence/apex-runtime-evidence.json
+            evidence/salesforce-apex-test-result.json
+          if-no-files-found: error
+
+      - name: Publish runtime status
+        if: always()
+        run: |
+          if [ "${{ steps.config.outputs.configured }}" = "true" ]; then
+            echo "Authenticated Salesforce runtime was configured for this run." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Authenticated Salesforce runtime was not configured. No runtime evidence was emitted; release aggregation should remain REVIEW unless a stronger NO-GO exists." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Enforce Apex test result
+        if: always() && steps.config.outputs.configured == 'true' && steps.apex.outputs.exit_code != '0'
+        env:
+          APEX_EXIT_CODE: ${{ steps.apex.outputs.exit_code }}
+        run: exit "${APEX_EXIT_CODE:-1}"

@@ -5,6 +5,7 @@ on:
     workflows:
       - PR Change Impact
       - Salesforce Code Analyzer
+      - Salesforce Apex Runtime
     types: [completed]
 
 permissions:
@@ -37,6 +38,9 @@ jobs:
           gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/code-analyzer.yml/runs" \
             -f event=pull_request -f status=completed -f head_sha="$TARGET_SHA" -f per_page=20 \
             > evidence/orchestrated/code-analyzer-runs.json
+          gh api --method GET "repos/${GITHUB_REPOSITORY}/actions/workflows/apex-runtime.yml/runs" \
+            -f event=pull_request -f status=completed -f head_sha="$TARGET_SHA" -f per_page=20 \
+            > evidence/orchestrated/apex-runtime-runs.json
 
       - name: Select same-SHA evidence runs
         id: plan
@@ -47,6 +51,7 @@ jobs:
           --expected-sha "$TARGET_SHA"
           --pr-impact-runs evidence/orchestrated/pr-impact-runs.json
           --code-analyzer-runs evidence/orchestrated/code-analyzer-runs.json
+          --apex-runtime-runs evidence/orchestrated/apex-runtime-runs.json
           --json-out evidence/orchestrated/orchestration-plan.json
           --github-output "$GITHUB_OUTPUT"
 
@@ -72,6 +77,17 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ steps.plan.outputs.code_analyzer_run_id }}
 
+      - name: Download Salesforce Apex runtime evidence
+        if: steps.plan.outputs.apex_runtime_run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          name: salesforce-apex-runtime-evidence
+          path: ${{ runner.temp }}/apex-runtime
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.plan.outputs.apex_runtime_run_id }}
+
       - name: Prepare collected evidence as data
         id: inputs
         env:
@@ -80,6 +96,7 @@ jobs:
         run: |
           PR_JSON="$(find "${RUNNER_TEMP}/pr-impact" -type f -name 'pr-native-impact.json' -print -quit 2>/dev/null || true)"
           CODE_JSON="$(find "${RUNNER_TEMP}/code-analyzer" -type f -name 'code-analyzer-evidence.json' -print -quit 2>/dev/null || true)"
+          APEX_JSON="$(find "${RUNNER_TEMP}/apex-runtime" -type f -name 'apex-runtime-evidence.json' -print -quit 2>/dev/null || true)"
 
           if [ -n "$PR_JSON" ]; then
             cp "$PR_JSON" evidence/orchestrated/pr-native-impact.json
@@ -107,12 +124,20 @@ jobs:
             echo "code_analyzer_arg=" >> "$GITHUB_OUTPUT"
           fi
 
+          if [ -n "$APEX_JSON" ]; then
+            cp "$APEX_JSON" evidence/orchestrated/apex-runtime-evidence.json
+            echo "apex_runtime_arg=--apex-runtime-evidence evidence/orchestrated/apex-runtime-evidence.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "apex_runtime_arg=" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build orchestrated BGSTM release evidence
         id: bundle
         env:
           TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
           TARGET_BRANCH: ${{ github.event.workflow_run.head_branch }}
           CODE_ANALYZER_ARG: ${{ steps.inputs.outputs.code_analyzer_arg }}
+          APEX_RUNTIME_ARG: ${{ steps.inputs.outputs.apex_runtime_arg }}
         shell: bash
         run: |
           args=(
@@ -128,9 +153,10 @@ jobs:
           if [ -n "$CODE_ANALYZER_ARG" ]; then
             args+=(--code-analyzer-evidence evidence/orchestrated/code-analyzer-evidence.json)
           fi
+          if [ -n "$APEX_RUNTIME_ARG" ]; then
+            args+=(--apex-runtime-evidence evidence/orchestrated/apex-runtime-evidence.json)
+          fi
 
-          # No Apex/runtime artifact is manufactured here. Until an authenticated runtime
-          # workflow exists, the aggregator correctly treats that evidence as missing/REVIEW.
           set +e
           python tools/bgstm_release_evidence.py "${args[@]}"
           status=$?
@@ -150,7 +176,7 @@ jobs:
             echo '```'
             echo
             echo "Upstream run selection and provenance are retained in \`orchestration-plan.json\`."
-            echo "Apex/runtime remains intentionally missing until a real authenticated runtime producer exists."
+            echo "Authenticated Apex/runtime evidence is ingested only when the same-SHA artifact exists and validates."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload orchestrated release evidence

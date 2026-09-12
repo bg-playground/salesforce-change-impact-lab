@@ -53,9 +53,11 @@ def build_plan(
     expected_sha: str,
     pr_impact_runs: list[dict[str, Any]],
     code_analyzer_runs: list[dict[str, Any]],
+    apex_runtime_runs: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     pr_run = select_run(pr_impact_runs, expected_sha=expected_sha)
     code_run = select_run(code_analyzer_runs, expected_sha=expected_sha)
+    apex_run = select_run(apex_runtime_runs or [], expected_sha=expected_sha)
     sources = {
         "pr_change_impact": {
             "workflow": "PR Change Impact",
@@ -66,6 +68,11 @@ def build_plan(
             "workflow": "Salesforce Code Analyzer",
             "artifact": "salesforce-code-analyzer-release-evidence",
             "run": code_run,
+        },
+        "salesforce_apex_runtime": {
+            "workflow": "Salesforce Apex Runtime",
+            "artifact": "salesforce-apex-runtime-evidence",
+            "run": apex_run,
         },
     }
     missing = [name for name, source in sources.items() if source["run"] is None]
@@ -81,6 +88,7 @@ def write_github_output(path: Path, plan: dict[str, Any]) -> None:
     mapping = {
         "pr_impact_run_id": plan["sources"]["pr_change_impact"]["run"],
         "code_analyzer_run_id": plan["sources"]["salesforce_code_analyzer"]["run"],
+        "apex_runtime_run_id": plan["sources"]["salesforce_apex_runtime"]["run"],
     }
     with path.open("a", encoding="utf-8") as handle:
         for key, run in mapping.items():
@@ -92,6 +100,7 @@ def main() -> int:
     parser.add_argument("--expected-sha", required=True)
     parser.add_argument("--pr-impact-runs", type=Path, required=True)
     parser.add_argument("--code-analyzer-runs", type=Path, required=True)
+    parser.add_argument("--apex-runtime-runs", type=Path)
     parser.add_argument("--json-out", type=Path, required=True)
     parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
@@ -100,6 +109,7 @@ def main() -> int:
         expected_sha=args.expected_sha,
         pr_impact_runs=load_runs(args.pr_impact_runs),
         code_analyzer_runs=load_runs(args.code_analyzer_runs),
+        apex_runtime_runs=load_runs(args.apex_runtime_runs) if args.apex_runtime_runs else [],
     )
     args.json_out.parent.mkdir(parents=True, exist_ok=True)
     args.json_out.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
