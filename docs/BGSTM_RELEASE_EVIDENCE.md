@@ -1,6 +1,6 @@
 # BGSTM-compatible release evidence
 
-Salesforce Change Impact Lab rolls requirement-aware semantic evidence together with supporting release signals into a deterministic handoff bundle aligned with BGSTM External Results v1. The adapter makes no BGSTM network calls and requires no Salesforce org credentials.
+Salesforce Change Impact Lab rolls requirement-aware semantic evidence together with supporting release signals into a deterministic handoff bundle aligned with BGSTM External Results v1. The offline adapter itself makes no BGSTM network calls. Real Salesforce runtime evidence is optional and is supplied only by the authenticated GitHub Actions workflow described below.
 
 ## Decision precedence
 
@@ -37,24 +37,33 @@ The Code Analyzer workflow emits real evidence after the actual analyzer action 
 
 For pull requests, evidence is bound to `github.event.pull_request.head.sha`, not the synthetic merge-ref `GITHUB_SHA`. That distinction matters when artifacts from independent workflows are joined by commit identity.
 
-### Apex/runtime
+### Authenticated Apex/runtime
 
-`tools/apex_runtime_evidence.py` is a dependency-free producer for authenticated runtime workflows. It does **not** execute Salesforce tests itself. A future scratch-org or authenticated CI job runs the real Apex/Flow runtime command, determines `passed` or `failed`, then invokes the producer with that result and the current release-candidate SHA.
+`.github/workflows/apex-runtime.yml` is the real org-backed runtime producer. When the two required repository secrets are present, it installs Salesforce CLI, authenticates the target org, runs `OpportunityReleaseGuardTest`, retains the raw Salesforce JSON result, and invokes `tools/apex_runtime_evidence.py` to produce the shared SHA-bound supporting-evidence artifact.
 
-Example after a real Apex test run:
+Required GitHub Actions secrets:
 
-```bash
-python tools/apex_runtime_evidence.py \
-  --status passed \
-  --git-sha "$RELEASE_CANDIDATE_SHA" \
-  --runtime-kind apex-tests \
-  --run-id "$GITHUB_RUN_ID" \
-  --run-url "https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-  --total 12 --passed 12 --failed 0 \
-  --json-out evidence/apex-runtime-evidence.json
+```text
+SF_INSTANCE_URL   My Domain or Salesforce instance URL
+SF_ACCESS_TOKEN   access token for the CI runtime user
 ```
 
-The producer can also represent Flow runtime or another org-backed execution via `--runtime-kind` without changing the release-bundle schema.
+Salesforce CLI supports non-interactive CI authentication through `SF_ACCESS_TOKEN` plus `sf org login access-token --no-prompt`. The runtime command uses `sf apex run test --class-names OpportunityReleaseGuardTest --wait 20 --result-format json --json`. The CI user must have the Salesforce permissions required to execute Apex tests.
+
+The repository never stores either credential. When the secrets are absent, the workflow emits no runtime artifact. That absence remains visible to the aggregator as missing evidence; it is never converted into a fixture pass.
+
+The resulting evidence is emitted with:
+
+```text
+source       salesforce-apex-runtime
+runtime_kind authenticated-apex-tests
+fixture      false
+status       passed | failed
+git_sha      exact pull-request head SHA
+run_id/url   GitHub Actions provenance
+```
+
+`tools/apex_runtime_evidence.py` remains dependency-free and does not authenticate or execute Salesforce by itself. It only serializes the result supplied by the authenticated workflow.
 
 ## Release bundle CLI
 
@@ -76,25 +85,23 @@ Both supporting cases preserve accepted source provenance inside the generated B
 
 ## Cross-workflow orchestration
 
-`.github/workflows/release-evidence.yml` joins evidence produced by independent GitHub Actions workflows. It is triggered after either `PR Change Impact` or `Salesforce Code Analyzer` completes.
+`.github/workflows/release-evidence.yml` joins evidence produced by three independent GitHub Actions workflows. It is triggered after `PR Change Impact`, `Salesforce Code Analyzer`, or `Salesforce Apex Runtime` completes.
 
 The orchestrator:
 
 1. takes the triggering workflow's `head_sha` as the release-candidate identity;
-2. queries completed runs of both upstream workflows for that exact SHA;
+2. queries completed runs of all three upstream workflows for that exact SHA;
 3. uses `tools/workflow_evidence_plan.py` to choose the latest matching completed run for each source;
 4. downloads only the expected named artifacts;
 5. treats the downloaded files strictly as data and never executes them;
-6. invokes the existing release aggregator with the collected evidence;
+6. invokes the existing release aggregator with whichever validated evidence artifacts are present;
 7. uploads one `bgstm-release-evidence` artifact containing the bundle, text summary, run-selection plan, and collected source data.
 
-A failed upstream run is not automatically discarded. A failed PR Change Impact run may be the expected manifestation of a semantic `NO-GO`, and a failed Code Analyzer run may contain the evidence that should block release. The evidence inside the artifact remains authoritative and is validated by the aggregator.
+A failed upstream run is not automatically discarded. A failed PR Change Impact run may be the expected manifestation of a semantic `NO-GO`; a failed Code Analyzer run may contain the evidence that should block release; and a failed Apex Runtime run can provide authoritative runtime failure evidence. The artifact content remains authoritative and is independently validated by the aggregator.
 
 ### Interim REVIEW and convergence
 
-The two upstream workflows finish independently, so the first completion can trigger orchestration before the second artifact exists. That first aggregation may legitimately produce `REVIEW` because required evidence is missing.
-
-When the second upstream workflow completes, `workflow_run` triggers orchestration again. The new run re-queries both workflows for the same SHA and converges on the fuller evidence set.
+The three upstream workflows finish independently, so early orchestration runs can legitimately produce `REVIEW` while one or more required artifacts are not yet available. Every upstream completion retriggers orchestration, which re-queries all three workflows for the exact same release SHA.
 
 ```text
 first upstream completes
@@ -103,16 +110,26 @@ partial evidence
         ↓
 REVIEW is acceptable
 
-second upstream completes
+later upstream completes
         ↓
-re-query same SHA
+re-query exact SHA
         ↓
 fuller evidence set
         ↓
 GO / REVIEW / NO-GO recomputed
 ```
 
-This avoids polling and does not convert absence into a false pass.
+A fully evidenced safe change can now converge to:
+
+```text
+semantic business-intent check   PASSED
+Salesforce Code Analyzer         PASSED
+authenticated Apex runtime       PASSED
+---------------------------------------
+release decision                 GO
+```
+
+A demonstrated semantic failure still has stronger precedence and remains `NO-GO` even when both supporting signals pass.
 
 ### Orchestration security boundary
 
@@ -125,29 +142,31 @@ contents: read
 
 It checks out trusted `main` orchestration code rather than PR-head code, uses the repository-scoped `GITHUB_TOKEN`, downloads only exact artifact names into temporary directories, and never executes downloaded content. The selected runs must match the exact release SHA, and supporting evidence is independently checked again for its embedded SHA before being trusted.
 
-No PAT, Salesforce credential, BGSTM runner token, or other long-lived secret is introduced.
+Salesforce credentials are available only to the dedicated runtime workflow as GitHub Actions secrets. They are not passed into the orchestrator or stored in artifacts.
 
 ## Credential-free demo vs real runtime
 
-Demo CI deliberately uses deterministic fixtures bound to its own `GITHUB_SHA` to prove the ingestion and release-decision machinery. The Apex fixture is explicitly marked `fixture: true`. This is **not** an assertion that Apex ran in a Salesforce org.
+Demo CI deliberately uses deterministic fixtures bound to its own `GITHUB_SHA` to prove ingestion and release-decision machinery. The Apex fixture is explicitly marked `fixture: true`. This is **not** an assertion that Apex ran in a Salesforce org.
 
-The real production path is:
+The real path is:
 
 ```text
-authenticated Salesforce runtime test
+authenticated Salesforce org
         ↓
-actual pass/fail result
+OpportunityReleaseGuardTest
+        ↓
+actual Salesforce CLI pass/fail
         ↓
 apex_runtime_evidence.py
         ↓
-SHA-bound evidence artifact
+SHA-bound artifact
         ↓
 cross-workflow collection
         ↓
 validated BGSTM release bundle
 ```
 
-Until that authenticated runtime workflow exists, the orchestrator intentionally supplies no Apex/runtime artifact. The release bundle therefore remains `REVIEW` when the semantic and Code Analyzer evidence pass, rather than manufacturing a runtime success.
+If authenticated credentials are not configured, no runtime artifact is emitted. Safe semantic + Code Analyzer evidence therefore remains `REVIEW`; the system never manufactures a runtime success.
 
 ## BGSTM upload sequence
 
