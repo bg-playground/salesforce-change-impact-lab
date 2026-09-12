@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,23 +30,38 @@ def run(run_id, *, sha=SHA, conclusion="success", attempt=1, status="completed",
 
 
 class WorkflowEvidencePlanTests(unittest.TestCase):
-    def test_both_sources_found(self):
+    def test_all_sources_found(self):
         plan = planmod.build_plan(
             expected_sha=SHA,
             pr_impact_runs=[run(10)],
             code_analyzer_runs=[run(20)],
+            apex_runtime_runs=[run(30)],
         )
         self.assertEqual([], plan["missing_sources"])
         self.assertEqual(10, plan["sources"]["pr_change_impact"]["run"]["id"])
         self.assertEqual(20, plan["sources"]["salesforce_code_analyzer"]["run"]["id"])
+        self.assertEqual(30, plan["sources"]["salesforce_apex_runtime"]["run"]["id"])
 
-    def test_one_source_missing(self):
+    def test_runtime_missing_is_reported(self):
+        plan = planmod.build_plan(
+            expected_sha=SHA,
+            pr_impact_runs=[run(10)],
+            code_analyzer_runs=[run(20)],
+            apex_runtime_runs=[],
+        )
+        self.assertEqual(["salesforce_apex_runtime"], plan["missing_sources"])
+
+    def test_multiple_sources_missing(self):
         plan = planmod.build_plan(
             expected_sha=SHA,
             pr_impact_runs=[run(10)],
             code_analyzer_runs=[],
+            apex_runtime_runs=[],
         )
-        self.assertEqual(["salesforce_code_analyzer"], plan["missing_sources"])
+        self.assertEqual(
+            ["salesforce_code_analyzer", "salesforce_apex_runtime"],
+            plan["missing_sources"],
+        )
 
     def test_failed_upstream_is_still_selected(self):
         selected = planmod.select_run([run(10, conclusion="failure")], expected_sha=SHA)
@@ -79,6 +95,21 @@ class WorkflowEvidencePlanTests(unittest.TestCase):
             expected_sha=SHA,
         )
         self.assertEqual(11, selected["id"])
+
+    def test_github_outputs_include_runtime_run_id(self):
+        plan = planmod.build_plan(
+            expected_sha=SHA,
+            pr_impact_runs=[run(10)],
+            code_analyzer_runs=[run(20)],
+            apex_runtime_runs=[run(30)],
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "github-output.txt"
+            planmod.write_github_output(output, plan)
+            text = output.read_text(encoding="utf-8")
+        self.assertIn("pr_impact_run_id=10", text)
+        self.assertIn("code_analyzer_run_id=20", text)
+        self.assertIn("apex_runtime_run_id=30", text)
 
 
 if __name__ == "__main__":
