@@ -2,7 +2,7 @@
 <ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
     <fullName>High_Discount_Requires_Finance</fullName>
     <active>true</active>
-    <description>SF-OPP-001: Require Finance approval for discounts above 20% before an Opportunity reaches Closed Won.</description>
+    <description>SF-OPP-001: Require Finance approval for discounts above 20% before Closed Won; orchestration positive-control description update.</description>
     <errorConditionFormula>AND(
         ISPICKVAL(StageName, "Closed Won"),
         Discount_Percent__c &gt; 20,
